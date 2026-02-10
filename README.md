@@ -24,7 +24,7 @@ Built as a bachelor project using **FastAPI**, **React**, **Elasticsearch**, and
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/polymarkettracker.git
+git clone https://github.com/NoahJunge/polymarkettracker.git
 cd polymarkettracker
 
 # 2. Start all services
