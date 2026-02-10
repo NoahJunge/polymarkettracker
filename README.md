@@ -36,7 +36,7 @@ docker compose up --build
 #    Elasticsearch: http://localhost:9200
 ```
 
-That's it. Docker Compose starts Elasticsearch, the backend, and the frontend. The collector begins discovering markets automatically.
+That's it. Docker Compose starts Elasticsearch, the backend, and the frontend. On first startup, seed data (tracked markets and historical snapshots) is automatically imported. The collector then begins discovering markets and collecting new data every 15 minutes.
 
 ## Architecture
 
@@ -61,7 +61,7 @@ That's it. Docker Compose starts Elasticsearch, the backend, and the frontend. T
 - **API**: RESTful endpoints under `/api/`
 
 ### Frontend (React + Vite)
-- **Pages**: Dashboard, Market Detail, Discovery, Paper Trading, Settings
+- **Pages**: Dashboard, Market Detail, Discovery, Paper Trading, Database, Settings
 - **Components**: MarketTable (sortable), PriceChart (Recharts), SummaryCards, AlertBell, TradeModal
 
 ### Elasticsearch Indices (6)
@@ -129,6 +129,11 @@ Or use the "Run Collector Now" button in the Settings page.
 - `POST /api/alerts/{id}/dismiss` — Dismiss a triggered alert
 - `DELETE /api/alerts/{id}` — Delete an alert
 
+### Database
+- `GET /api/database/markets` — List tracked markets for search
+- `GET /api/database/snapshots?market_id=...&from_date=...&to_date=...` — Browse snapshots
+- `GET /api/database/export?market_id=...&from_date=...&to_date=...` — Download as Excel
+
 ### Jobs & Settings
 - `POST /api/jobs/collect` — Trigger immediate collection
 - `GET /api/jobs/status` — Scheduler status and last run stats
@@ -157,6 +162,50 @@ pytest tests/ -v
 ```
 
 58 unit tests covering: keyword filters, binary market detection, deduplication, P&L calculations, snapshot building, and price normalization.
+
+## Seed Data & Sharing
+
+The repository includes a seed data file (`backend/seed_data/seed.xlsx`) that contains pre-configured tracked markets and historical price snapshots. This ensures everyone who clones the repo starts with the same data.
+
+### How It Works
+
+- On **first startup** (empty database), the backend automatically imports the seed file
+- After the initial import, the seed file is ignored — your local data lives in Elasticsearch
+- The collector then continues gathering new data from that point forward
+
+### What Gets Shared via Seed Data
+
+| Shared (in seed) | Not shared (local only) |
+|-------------------|------------------------|
+| Tracked market selections | Paper trades |
+| Market metadata | Price alerts |
+| Historical price snapshots | Settings customizations |
+
+### Updating Seed Data
+
+If you've tracked new markets or want to share the latest snapshots with collaborators:
+
+```bash
+# 1. Export your current data to the seed file
+docker compose exec backend python export_seed.py
+
+# 2. Commit and push
+git add backend/seed_data/seed.xlsx
+git commit -m "Update seed data"
+git push
+```
+
+### Starting Fresh with Updated Seed Data
+
+If a collaborator has pushed new seed data and you want to start fresh:
+
+```bash
+git pull
+docker compose down -v    # -v removes the ES data volume
+docker compose up --build
+```
+
+> **Note:** `docker compose down -v` deletes all local Elasticsearch data (trades, alerts, etc.). Only do this if you want a clean start from the seed file.
 
 ## Importing Historical Data
 
@@ -188,10 +237,13 @@ backend/
   api/                 # FastAPI route handlers
   utils/               # Filters, dedup, retry logic
   tests/               # 58 unit tests
+  seed_data/seed.xlsx  # Shared seed data for first-time setup
+  export_seed.py       # Script to export current data to seed file
+  import_spreadsheet.py # Import data from Excel spreadsheets
 
 frontend/
   src/
-    pages/             # Dashboard, MarketDetail, Discovery, PaperTrading, Settings
+    pages/             # Dashboard, MarketDetail, Discovery, PaperTrading, Database, Settings
     components/        # MarketTable, PriceChart, SummaryCards, AlertBell, TradeModal, etc.
     api/client.js      # Axios API client
 ```
