@@ -1,6 +1,7 @@
 """FastAPI application entry point with lifespan for ES and scheduler init."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -49,6 +50,19 @@ async def lifespan(app: FastAPI):
     for name, mapping in ALL_INDICES.items():
         await es.ensure_index(name, mapping)
     logger.info("All indices ensured")
+
+    # Auto-import seed data on first run (empty database)
+    seed_path = os.path.join(os.path.dirname(__file__), "seed_data", "seed.xlsx")
+    if os.path.exists(seed_path):
+        snap_count = await es.count("snapshots_wide")
+        if snap_count == 0:
+            logger.info("Empty database detected — importing seed data from %s", seed_path)
+            try:
+                from import_spreadsheet import import_all
+                await import_all(seed_path)
+                logger.info("Seed data import complete")
+            except Exception as e:
+                logger.error("Seed data import failed: %s", e)
 
     # Init services
     gamma = GammaClient()

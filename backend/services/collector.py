@@ -126,6 +126,9 @@ class CollectorService:
                         if not is_binary_yes_no(outcomes, outcome_prices):
                             continue
 
+                    # Extract yes/no prices from discovery data
+                    yes_price, no_price = normalize_yes_no_prices(outcomes, outcome_prices)
+
                     # Build canonical market dict
                     slug = market.get("slug", "") or market.get("market_slug", "")
                     # End date: prefer market-level, fallback to event-level
@@ -145,6 +148,8 @@ class CollectorService:
                         "resolution_source": market.get("resolutionSource", "") or "",
                         "volume_24hr": float(market.get("volume24hr", 0) or 0),
                         "one_day_price_change": float(market.get("oneDayPriceChange", 0) or 0),
+                        "yes_price": round(yes_price, 6) if yes_price else None,
+                        "no_price": round(no_price, 6) if no_price else None,
                     }
 
                     if mid not in all_markets:

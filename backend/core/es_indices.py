@@ -21,6 +21,8 @@ MARKETS_MAPPING = {
             "resolution_source": {"type": "keyword"},
             "volume_24hr": {"type": "double"},
             "one_day_price_change": {"type": "double"},
+            "yes_price": {"type": "double"},
+            "no_price": {"type": "double"},
             "first_seen_utc": {"type": "date"},
             "last_seen_utc": {"type": "date"},
         }

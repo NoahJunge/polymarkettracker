@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import MarketDetail from "./pages/MarketDetail";
 import Discovery from "./pages/Discovery";
 import PaperTrading from "./pages/PaperTrading";
+import Database from "./pages/Database";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/markets/:marketId" element={<MarketDetail />} />
         <Route path="/discovery" element={<Discovery />} />
         <Route path="/paper-trading" element={<PaperTrading />} />
+        <Route path="/database" element={<Database />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

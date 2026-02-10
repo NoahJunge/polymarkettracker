@@ -266,14 +266,14 @@ class MarketService:
         total_discovered = await self.es.count(MARKETS_INDEX)
 
         return {
-            "total_tracked": len(tracked_ids),
+            "total_tracked": tracked_markets_result["hits"]["total"]["value"],
             "total_discovered": total_discovered,
             "biggest_movers": movers,
             "closing_soon": closing_soon,
         }
 
     async def _enrich_with_prices(self, markets: list[dict]):
-        """Add latest yes_price/no_price from snapshots."""
+        """Add latest yes_price/no_price from snapshots, falling back to market-level prices."""
         for m in markets:
             mid = m.get("market_id")
             if not mid:

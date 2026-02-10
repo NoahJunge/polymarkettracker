@@ -37,6 +37,14 @@ export const getSettings = () => api.get("/settings");
 export const updateSettings = (body) => api.post("/settings", body);
 export const getExports = () => api.get("/exports");
 
+// --- Database ---
+export const getDatabaseMarkets = (params = {}) =>
+  api.get("/database/markets", { params });
+export const getDatabaseSnapshots = (params = {}) =>
+  api.get("/database/snapshots", { params });
+export const exportDatabaseXlsx = (params = {}) =>
+  api.get("/database/export", { params, responseType: "blob" });
+
 // --- Alerts ---
 export const getAlerts = (params = {}) => api.get("/alerts", { params });
 export const getTriggeredAlerts = () => api.get("/alerts/triggered");

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { getNewBets, getCategories, setTracking } from "../api/client";
 import MarketTable from "../components/MarketTable";
 
+const PAGE_SIZE = 50;
+
 export default function Discovery() {
   const [markets, setMarkets] = useState([]);
   const [total, setTotal] = useState(0);
@@ -10,13 +12,16 @@ export default function Discovery() {
   const [category, setCategory] = useState("");
   const [sortField, setSortField] = useState("volumeNum");
   const [sortOrder, setSortOrder] = useState("desc");
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
+  const load = async (pageOverride) => {
     setLoading(true);
+    const currentPage = pageOverride ?? page;
     try {
       const params = {
-        size: 200,
+        size: PAGE_SIZE,
+        from: currentPage * PAGE_SIZE,
         sort: sortField,
         order: sortOrder,
       };
@@ -48,16 +53,18 @@ export default function Discovery() {
 
   useEffect(() => {
     load();
-  }, [category, sortField, sortOrder]);
+  }, [category, sortField, sortOrder, page]);
 
   const handleSearch = (e) => {
     e.preventDefault();
-    load();
+    setPage(0);
+    load(0);
   };
 
   const handleSort = (field, order) => {
     setSortField(field);
     setSortOrder(order);
+    setPage(0);
   };
 
   const handleTrack = async (marketId) => {
@@ -68,6 +75,10 @@ export default function Discovery() {
       console.error("Failed to track market", err);
     }
   };
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const from = page * PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * PAGE_SIZE, total);
 
   return (
     <div>
@@ -101,7 +112,10 @@ export default function Discovery() {
           <label className="text-sm text-slate-500">Category:</label>
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setPage(0);
+            }}
             className="border border-slate-300 rounded px-3 py-1.5 text-sm"
           >
             <option value="">All</option>
@@ -118,7 +132,8 @@ export default function Discovery() {
             onClick={() => {
               setSearch("");
               setCategory("");
-              setTimeout(load, 0);
+              setPage(0);
+              setTimeout(() => load(0), 0);
             }}
             className="text-sm text-slate-500 hover:text-slate-700 underline"
           >
@@ -127,19 +142,49 @@ export default function Discovery() {
         )}
       </div>
 
-      {loading ? (
+      {loading && markets.length === 0 ? (
         <p className="text-slate-500">Loading...</p>
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <MarketTable
-            markets={markets}
-            showTrackButton
-            onTrack={handleTrack}
-            sortField={sortField}
-            sortOrder={sortOrder}
-            onSort={handleSort}
-          />
-        </div>
+        <>
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <MarketTable
+              markets={markets}
+              showTrackButton
+              onTrack={handleTrack}
+              sortField={sortField}
+              sortOrder={sortOrder}
+              onSort={handleSort}
+            />
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-slate-500">
+                Showing {from}–{to} of {total.toLocaleString()}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1.5 text-sm border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-slate-600">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="px-3 py-1.5 text-sm border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
