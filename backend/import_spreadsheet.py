@@ -210,6 +210,94 @@ def read_tracked_markets(wb) -> list[dict]:
     return docs
 
 
+def read_paper_trades(wb) -> list[dict]:
+    """Read the paper_trades sheet."""
+    ws = wb["paper_trades"]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+
+    headers = rows[0]
+    logger.info("paper_trades headers: %s", headers)
+    docs = []
+
+    for row in rows[1:]:
+        if not row or not row[0]:
+            continue
+        trade_id = str(row[0])
+        created_at_utc = str(row[1]) if row[1] else None
+        market_id = str(int(row[2])) if isinstance(row[2], float) else str(row[2])
+        side = str(row[3]) if row[3] else "YES"
+        action = str(row[4]) if row[4] else "OPEN"
+        quantity = parse_number(row[5])
+        price = parse_number(row[6])
+        snapshot_ts_utc = str(row[7]) if row[7] else None
+        fees = parse_number(row[8]) if len(row) > 8 else 0.0
+
+        metadata = {}
+        if len(row) > 9 and row[9]:
+            try:
+                metadata = json.loads(str(row[9]))
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+
+        doc = {
+            "trade_id": trade_id,
+            "created_at_utc": created_at_utc,
+            "market_id": market_id,
+            "side": side,
+            "action": action,
+            "quantity": quantity,
+            "price": round(price, 6),
+            "snapshot_ts_utc": snapshot_ts_utc,
+            "fees": fees,
+            "metadata": metadata,
+        }
+        docs.append(doc)
+
+    logger.info("Parsed %d paper trades from spreadsheet", len(docs))
+    return docs
+
+
+def read_dca_subscriptions(wb) -> list[dict]:
+    """Read the dca_subscriptions sheet."""
+    ws = wb["dca_subscriptions"]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+
+    headers = rows[0]
+    logger.info("dca_subscriptions headers: %s", headers)
+    docs = []
+
+    for row in rows[1:]:
+        if not row or not row[0]:
+            continue
+        dca_id = str(row[0])
+        market_id = str(int(row[1])) if isinstance(row[1], float) else str(row[1])
+        side = str(row[2]) if row[2] else "YES"
+        quantity = parse_number(row[3])
+        active = row[4] if isinstance(row[4], bool) else str(row[4]).upper() == "TRUE" if row[4] else True
+        created_at_utc = str(row[5]) if row[5] else None
+        last_executed_date = str(row[6]) if len(row) > 6 and row[6] else None
+        total_trades_placed = int(row[7]) if len(row) > 7 and row[7] else 0
+
+        doc = {
+            "dca_id": dca_id,
+            "market_id": market_id,
+            "side": side,
+            "quantity": quantity,
+            "active": active,
+            "created_at_utc": created_at_utc,
+            "last_executed_date": last_executed_date,
+            "total_trades_placed": total_trades_placed,
+        }
+        docs.append(doc)
+
+    logger.info("Parsed %d DCA subscriptions from spreadsheet", len(docs))
+    return docs
+
+
 async def import_all(filepath: str):
     """Import all data from the spreadsheet into Elasticsearch."""
     logger.info("Opening %s", filepath)
@@ -250,8 +338,25 @@ async def import_all(filepath: str):
             success, errors = await async_bulk(es, actions, chunk_size=500, raise_on_error=False)
             logger.info("Tracked markets imported: %d success, %d errors", success, len(errors) if errors else 0)
 
+        # 4. Import paper trades (if sheet exists)
+        if "paper_trades" in wb.sheetnames:
+            trades = read_paper_trades(wb)
+            if trades:
+                actions = [{"_index": "paper_trades", "_id": t["trade_id"], "_source": t} for t in trades]
+                success, errors = await async_bulk(es, actions, chunk_size=500, raise_on_error=False)
+                logger.info("Paper trades imported: %d success, %d errors", success, len(errors) if errors else 0)
+
+        # 5. Import DCA subscriptions (if sheet exists)
+        if "dca_subscriptions" in wb.sheetnames:
+            dcas = read_dca_subscriptions(wb)
+            if dcas:
+                actions = [{"_index": "dca_subscriptions", "_id": d["dca_id"], "_source": d} for d in dcas]
+                success, errors = await async_bulk(es, actions, chunk_size=500, raise_on_error=False)
+                logger.info("DCA subscriptions imported: %d success, %d errors", success, len(errors) if errors else 0)
+
         # Force refresh so data is searchable immediately
-        await es.indices.refresh(index="markets,snapshots_wide,tracked_markets")
+        indices = "markets,snapshots_wide,tracked_markets,paper_trades,dca_subscriptions"
+        await es.indices.refresh(index=indices)
         logger.info("Import complete!")
 
     finally:

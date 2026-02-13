@@ -94,7 +94,24 @@ async def export_seed():
         snapshots_df = snapshots_df.drop(columns=["_doc_id"], errors="ignore")
         logger.info("Snapshots: %d rows", len(snapshots_df))
 
-        # 5. Write to Excel
+        # 5. Export paper trades
+        trade_docs = await scroll_all(es, "paper_trades")
+        trades_df = pd.DataFrame(trade_docs) if trade_docs else pd.DataFrame()
+        trades_df = trades_df.drop(columns=["_doc_id"], errors="ignore")
+        if "metadata" in trades_df.columns:
+            import json as _json
+            trades_df["metadata"] = trades_df["metadata"].apply(
+                lambda x: _json.dumps(x) if isinstance(x, dict) else str(x or "{}")
+            )
+        logger.info("Paper trades: %d rows", len(trades_df))
+
+        # 6. Export DCA subscriptions
+        dca_docs = await scroll_all(es, "dca_subscriptions")
+        dca_df = pd.DataFrame(dca_docs) if dca_docs else pd.DataFrame()
+        dca_df = dca_df.drop(columns=["_doc_id"], errors="ignore")
+        logger.info("DCA subscriptions: %d rows", len(dca_df))
+
+        # 7. Write to Excel
         with pd.ExcelWriter(SEED_FILE, engine="openpyxl") as writer:
             # Column order must match import_spreadsheet.py expectations
             snap_cols = [
@@ -119,6 +136,24 @@ async def export_seed():
             ]
             track_cols = [c for c in track_cols if c in tracked_df.columns]
             tracked_df[track_cols].to_excel(writer, index=False, sheet_name="tracked_markets")
+
+            if not trades_df.empty:
+                trade_cols = [
+                    "trade_id", "created_at_utc", "market_id", "side",
+                    "action", "quantity", "price", "snapshot_ts_utc",
+                    "fees", "metadata",
+                ]
+                trade_cols = [c for c in trade_cols if c in trades_df.columns]
+                trades_df[trade_cols].to_excel(writer, index=False, sheet_name="paper_trades")
+
+            if not dca_df.empty:
+                dca_cols = [
+                    "dca_id", "market_id", "side", "quantity",
+                    "active", "created_at_utc", "last_executed_date",
+                    "total_trades_placed",
+                ]
+                dca_cols = [c for c in dca_cols if c in dca_df.columns]
+                dca_df[dca_cols].to_excel(writer, index=False, sheet_name="dca_subscriptions")
 
         logger.info("Seed data exported to %s", SEED_FILE)
         size_mb = os.path.getsize(SEED_FILE) / (1024 * 1024)
