@@ -1,5 +1,7 @@
 """Settings API endpoints."""
 
+import os
+
 from fastapi import APIRouter, Request
 
 from models.settings import SettingsUpdate
@@ -33,3 +35,13 @@ async def update_settings(request: Request, body: SettingsUpdate):
 async def list_exports(request: Request):
     svc = request.app.state.export_service
     return await svc.list_exports()
+
+
+@router.post("/exports/all")
+async def export_all(request: Request):
+    svc = request.app.state.export_service
+    filepath = await svc.export_all()
+    if filepath is None:
+        return {"status": "empty", "message": "No snapshots to export"}
+    filename = os.path.basename(filepath)
+    return {"status": "ok", "filename": filename}

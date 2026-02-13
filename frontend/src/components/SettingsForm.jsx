@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getSettings, updateSettings, runCollector, getJobStatus, getExports } from "../api/client";
+import { getSettings, updateSettings, runCollector, getJobStatus, getExports, exportAll } from "../api/client";
 
 export default function SettingsForm() {
   const [settings, setSettings] = useState(null);
@@ -7,6 +7,7 @@ export default function SettingsForm() {
   const [exports, setExports] = useState([]);
   const [saving, setSaving] = useState(false);
   const [collecting, setCollecting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState(null);
 
   const load = async () => {
@@ -54,6 +55,24 @@ export default function SettingsForm() {
       setMessage("Collection failed: " + (err.response?.data?.detail || err.message));
     } finally {
       setCollecting(false);
+    }
+  };
+
+  const handleExportAll = async () => {
+    setExporting(true);
+    setMessage(null);
+    try {
+      const res = await exportAll();
+      if (res.data.status === "empty") {
+        setMessage("No snapshots to export.");
+      } else {
+        setMessage(`Exported all data to ${res.data.filename}`);
+      }
+      await load();
+    } catch (err) {
+      setMessage("Export failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -251,9 +270,16 @@ export default function SettingsForm() {
       )}
 
       {/* Export Files */}
-      {exports.length > 0 && (
-        <section className="bg-white rounded-lg border border-slate-200 p-5">
-          <h3 className="text-base font-semibold mb-3">Export Files</h3>
+      <section className="bg-white rounded-lg border border-slate-200 p-5">
+        <h3 className="text-base font-semibold mb-3">Export Files</h3>
+        <button
+          onClick={handleExportAll}
+          disabled={exporting}
+          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50 mb-4"
+        >
+          {exporting ? "Exporting..." : "Export All Data"}
+        </button>
+        {exports.length > 0 && (
           <div className="text-sm space-y-1">
             {exports.map((f) => (
               <p key={f.filename}>
@@ -264,8 +290,8 @@ export default function SettingsForm() {
               </p>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }

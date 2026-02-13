@@ -50,6 +50,27 @@ class ExportService:
         logger.info("Exported %d rows to %s", len(rows), filepath)
         return filepath
 
+    async def export_all(self) -> str | None:
+        """Export all snapshots to a single CSV in the export directory."""
+        result = await self.es.search(
+            SNAPSHOTS_INDEX,
+            query={"match_all": {}},
+            sort=[{"timestamp_utc": {"order": "asc"}}],
+            size=10000,
+        )
+
+        rows = [hit["_source"] for hit in result["hits"]["hits"]]
+        if not rows:
+            logger.info("No snapshots to export")
+            return None
+
+        now_str = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H%M%S")
+        filepath = os.path.join(self.export_dir, f"snapshot_all_{now_str}.csv")
+        df = pd.DataFrame(rows)
+        df.to_csv(filepath, index=False)
+        logger.info("Exported %d rows to %s", len(rows), filepath)
+        return filepath
+
     async def list_exports(self) -> list[dict]:
         """List all export files in the export directory."""
         files = []

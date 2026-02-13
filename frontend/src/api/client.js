@@ -36,6 +36,7 @@ export const getAllTrades = () => api.get("/paper_trades");
 export const getSettings = () => api.get("/settings");
 export const updateSettings = (body) => api.post("/settings", body);
 export const getExports = () => api.get("/exports");
+export const exportAll = () => api.post("/exports/all");
 
 // --- Database ---
 export const getDatabaseMarkets = (params = {}) =>
