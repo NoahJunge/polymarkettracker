@@ -4,6 +4,7 @@ import {
   getCategories,
   getDashboardSummary,
   getPortfolioSummary,
+  getPositions,
 } from "../api/client";
 import MarketTable from "../components/MarketTable";
 import SummaryCards from "../components/SummaryCards";
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
+  const [positions, setPositions] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [sortField, setSortField] = useState("volumeNum");
@@ -38,16 +40,18 @@ export default function Dashboard() {
       if (search) params.search = search;
       if (category) params.category = category;
 
-      const [marketsRes, summaryRes, portfolioRes] = await Promise.all([
+      const [marketsRes, summaryRes, portfolioRes, positionsRes] = await Promise.all([
         getMarkets(params),
         getDashboardSummary(),
         getPortfolioSummary().catch(() => ({ data: null })),
+        getPositions().catch(() => ({ data: [] })),
       ]);
 
       setMarkets(marketsRes.data.markets);
       setTotal(marketsRes.data.total);
       setSummary(summaryRes.data);
       setPortfolio(portfolioRes.data);
+      setPositions(positionsRes.data || []);
       setLastUpdated(new Date());
       setSecondsAgo(0);
     } catch (err) {
@@ -195,6 +199,7 @@ export default function Dashboard() {
             sortField={sortField}
             sortOrder={sortOrder}
             onSort={handleSort}
+            positions={positions}
           />
         </div>
       )}

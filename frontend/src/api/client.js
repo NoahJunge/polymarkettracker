@@ -13,6 +13,8 @@ export const getMarket = (id) => api.get(`/markets/${id}`);
 export const getSnapshots = (id, params = {}) =>
   api.get(`/markets/${id}/snapshots`, { params });
 export const getNewBets = (params = {}) => api.get("/new_bets", { params });
+export const exportNewBets = () =>
+  api.get("/new_bets/export", { responseType: "blob" });
 export const getCategories = () => api.get("/markets/categories");
 export const getDashboardSummary = () => api.get("/markets/summary");
 
@@ -45,6 +47,13 @@ export const getDatabaseSnapshots = (params = {}) =>
   api.get("/database/snapshots", { params });
 export const exportDatabaseXlsx = (params = {}) =>
   api.get("/database/export", { params, responseType: "blob" });
+
+// --- DCA ---
+export const createDCA = (body) => api.post("/dca", body);
+export const getDCAList = (params = {}) => api.get("/dca", { params });
+export const cancelDCA = (dcaId) => api.post(`/dca/${dcaId}/cancel`);
+export const getDCAAnalytics = (dcaId) => api.get(`/dca/${dcaId}/analytics`);
+export const getDCATrades = (params = {}) => api.get("/dca/trades", { params });
 
 // --- Alerts ---
 export const getAlerts = (params = {}) => api.get("/alerts", { params });

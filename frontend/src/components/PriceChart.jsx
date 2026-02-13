@@ -19,7 +19,7 @@ function formatTimestamp(ts) {
   });
 }
 
-export default function PriceChart({ snapshots }) {
+export default function PriceChart({ snapshots, trades = [] }) {
   if (!snapshots || snapshots.length === 0) {
     return <p className="text-slate-500 py-4">No snapshot data available.</p>;
   }
@@ -31,7 +31,24 @@ export default function PriceChart({ snapshots }) {
       time: s.timestamp_utc,
       yes: +(s.yes_price * 100).toFixed(1),
       no: +(s.no_price * 100).toFixed(1),
+      trade: null,
     }));
+
+  // Attach trade markers to matching data points
+  if (trades.length > 0) {
+    const tradeByTs = {};
+    for (const t of trades) {
+      const ts = t.snapshot_ts_utc || t.created_at_utc;
+      tradeByTs[ts] = +(t.price * 100).toFixed(1);
+    }
+    for (const d of data) {
+      if (tradeByTs[d.time] != null) {
+        d.trade = tradeByTs[d.time];
+      }
+    }
+  }
+
+  const hasTrades = data.some((d) => d.trade != null);
 
   return (
     <ResponsiveContainer width="100%" height={350}>
@@ -50,7 +67,10 @@ export default function PriceChart({ snapshots }) {
         />
         <Tooltip
           labelFormatter={formatTimestamp}
-          formatter={(v) => [`${v}¢`]}
+          formatter={(v, name) => [
+            `${v}¢`,
+            name === "trade" ? "DCA Entry" : name,
+          ]}
         />
         <Legend />
         <Line
@@ -69,6 +89,18 @@ export default function PriceChart({ snapshots }) {
           dot={false}
           strokeWidth={2}
         />
+        {hasTrades && (
+          <Line
+            type="monotone"
+            dataKey="trade"
+            name="DCA Entry"
+            stroke="none"
+            dot={{ fill: "#4f46e5", r: 4, strokeWidth: 2, stroke: "#fff" }}
+            activeDot={{ r: 6 }}
+            connectNulls={false}
+            legendType="diamond"
+          />
+        )}
       </LineChart>
     </ResponsiveContainer>
   );

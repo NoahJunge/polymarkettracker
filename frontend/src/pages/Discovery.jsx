@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getNewBets, getCategories, setTracking } from "../api/client";
+import { getNewBets, getCategories, setTracking, exportNewBets } from "../api/client";
 import MarketTable from "../components/MarketTable";
 
 const PAGE_SIZE = 50;
@@ -14,6 +14,7 @@ export default function Discovery() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const load = async (pageOverride) => {
     setLoading(true);
@@ -73,6 +74,30 @@ export default function Discovery() {
       await load();
     } catch (err) {
       console.error("Failed to track market", err);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await exportNewBets();
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      const disposition = res.headers["content-disposition"];
+      const filename = disposition
+        ? disposition.split("filename=")[1]
+        : "discovery.xlsx";
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed", err);
+      alert("Export failed.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -140,6 +165,14 @@ export default function Discovery() {
             Clear filters
           </button>
         )}
+
+        <button
+          onClick={handleExport}
+          disabled={exporting || total === 0}
+          className="ml-auto px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {exporting ? "Exporting..." : "Export to Excel"}
+        </button>
       </div>
 
       {loading && markets.length === 0 ? (

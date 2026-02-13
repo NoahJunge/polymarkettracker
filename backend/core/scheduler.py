@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 
 COLLECTOR_JOB_ID = "collector"
 EXPORT_JOB_ID = "daily_export"
+DCA_JOB_ID = "dca_daily"
 
 
 class SchedulerManager:
-    def __init__(self, es: ESClient, settings_svc, collector_svc, export_svc, alerts_svc=None):
+    def __init__(self, es: ESClient, settings_svc, collector_svc, export_svc, alerts_svc=None, dca_svc=None):
         self.es = es
         self.settings_svc = settings_svc
         self.collector_svc = collector_svc
         self.export_svc = export_svc
         self.alerts_svc = alerts_svc
+        self.dca_svc = dca_svc
         self.scheduler = AsyncIOScheduler()
         self._started = False
 
@@ -62,6 +64,18 @@ class SchedulerManager:
                 misfire_grace_time=3600,
             )
             logger.info("Scheduled daily export at 00:05 UTC")
+
+        # DCA daily job
+        if self.dca_svc:
+            self.scheduler.add_job(
+                self._run_dca,
+                trigger=CronTrigger(hour=0, minute=30),
+                id=DCA_JOB_ID,
+                name="DCA Daily Trades",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            logger.info("Scheduled DCA daily job at 00:30 UTC")
 
         self.scheduler.start()
         self._started = True
@@ -149,3 +163,11 @@ class SchedulerManager:
         filepath = await self.export_svc.export_daily_snapshot()
         if filepath:
             logger.info("Daily export completed: %s", filepath)
+
+    async def _run_dca(self):
+        """Internal: run daily DCA trades."""
+        if not self.dca_svc:
+            return
+        logger.info("Starting DCA daily execution")
+        result = await self.dca_svc.execute_daily()
+        logger.info("DCA daily execution complete: %s", result)

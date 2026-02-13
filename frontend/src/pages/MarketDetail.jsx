@@ -1,6 +1,14 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { getMarket, getSnapshots, setTracking } from "../api/client";
+import {
+  getMarket,
+  getSnapshots,
+  setTracking,
+  getDCAList,
+  getDCATrades,
+  getDCAAnalytics,
+  cancelDCA,
+} from "../api/client";
 import PriceChart from "../components/PriceChart";
 import SnapshotTable from "../components/SnapshotTable";
 import TradeModal from "../components/TradeModal";
@@ -14,15 +22,50 @@ export default function MarketDetail() {
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // DCA state
+  const [dcaAnalytics, setDcaAnalytics] = useState(null);
+  const [dcaTrades, setDcaTrades] = useState([]);
+  const [activeDcaId, setActiveDcaId] = useState(null);
+  const [cancellingDca, setCancellingDca] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
-      const [mRes, sRes] = await Promise.all([
+      const [mRes, sRes, dcaRes, dcaTradesRes] = await Promise.all([
         getMarket(marketId),
         getSnapshots(marketId, { limit: 2000, sort: "desc" }),
+        getDCAList({ market_id: marketId }),
+        getDCATrades({ market_id: marketId }),
       ]);
       setMarket(mRes.data);
       setSnapshots(sRes.data);
+      setDcaTrades(dcaTradesRes.data);
+
+      // Check for active DCA subscription
+      const subs = dcaRes.data;
+      const activeSub = subs.find((s) => s.active);
+      if (activeSub) {
+        setActiveDcaId(activeSub.dca_id);
+        try {
+          const aRes = await getDCAAnalytics(activeSub.dca_id);
+          setDcaAnalytics(aRes.data);
+        } catch (err) {
+          console.error("Failed to load DCA analytics", err);
+        }
+      } else if (subs.length > 0) {
+        // Show analytics for most recent (cancelled) subscription
+        const latest = subs[0];
+        setActiveDcaId(null);
+        try {
+          const aRes = await getDCAAnalytics(latest.dca_id);
+          setDcaAnalytics(aRes.data);
+        } catch (err) {
+          console.error("Failed to load DCA analytics", err);
+        }
+      } else {
+        setActiveDcaId(null);
+        setDcaAnalytics(null);
+      }
     } catch (err) {
       console.error("Failed to load market", err);
     } finally {
@@ -40,6 +83,19 @@ export default function MarketDetail() {
       await load();
     } catch (err) {
       console.error("Failed to update tracking", err);
+    }
+  };
+
+  const handleCancelDca = async () => {
+    if (!activeDcaId) return;
+    setCancellingDca(true);
+    try {
+      await cancelDCA(activeDcaId);
+      await load();
+    } catch (err) {
+      console.error("Failed to cancel DCA", err);
+    } finally {
+      setCancellingDca(false);
     }
   };
 
@@ -81,7 +137,7 @@ export default function MarketDetail() {
           <p className="text-2xl font-semibold text-green-600">
             {market.yes_price != null
               ? `${(market.yes_price * 100).toFixed(1)}¢`
-              : "—"}
+              : "\u2014"}
           </p>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -89,7 +145,7 @@ export default function MarketDetail() {
           <p className="text-2xl font-semibold text-red-600">
             {market.no_price != null
               ? `${(market.no_price * 100).toFixed(1)}¢`
-              : "—"}
+              : "\u2014"}
           </p>
         </div>
         <div className="bg-white rounded-lg border border-slate-200 p-4">
@@ -163,10 +219,74 @@ export default function MarketDetail() {
         )}
       </div>
 
+      {/* DCA Analytics */}
+      {dcaAnalytics && dcaAnalytics.total_trades > 0 && (
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold">
+              DCA Strategy
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                {dcaAnalytics.side} &middot; {dcaAnalytics.quantity_per_day} shares/day &middot;{" "}
+                {dcaAnalytics.first_trade_date} to {dcaAnalytics.last_trade_date}
+              </span>
+            </h3>
+            {activeDcaId && (
+              <button
+                onClick={handleCancelDca}
+                disabled={cancellingDca}
+                className="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+              >
+                {cancellingDca ? "Cancelling..." : "Cancel DCA"}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-slate-500">Total Invested</p>
+              <p className="text-lg font-semibold">
+                ${dcaAnalytics.total_invested.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Avg Entry Price</p>
+              <p className="text-lg font-semibold">
+                {(dcaAnalytics.avg_entry_price * 100).toFixed(1)}¢
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Current Value</p>
+              <p className="text-lg font-semibold">
+                ${dcaAnalytics.current_value.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Unrealized P&L</p>
+              <p
+                className={`text-lg font-semibold ${
+                  dcaAnalytics.unrealized_pnl >= 0
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                {dcaAnalytics.unrealized_pnl >= 0 ? "+" : ""}
+                ${dcaAnalytics.unrealized_pnl.toFixed(2)}{" "}
+                <span className="text-sm font-normal">
+                  ({dcaAnalytics.unrealized_pnl_pct >= 0 ? "+" : ""}
+                  {dcaAnalytics.unrealized_pnl_pct.toFixed(1)}%)
+                </span>
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 mt-3">
+            {dcaAnalytics.total_trades} trades &middot; {dcaAnalytics.total_shares} total shares
+          </p>
+        </div>
+      )}
+
       {/* Price Chart */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
         <h3 className="text-base font-semibold mb-3">Price History</h3>
-        <PriceChart snapshots={snapshots} />
+        <PriceChart snapshots={snapshots} trades={dcaTrades} />
       </div>
 
       {/* Snapshot Table */}

@@ -19,6 +19,7 @@ from services.tracking_service import TrackingService
 from services.paper_trading_service import PaperTradingService
 from services.export_service import ExportService
 from services.alerts_service import AlertsService
+from services.dca_service import DCAService
 from api.router import api_router
 
 logging.basicConfig(
@@ -75,9 +76,10 @@ async def lifespan(app: FastAPI):
     paper_svc = PaperTradingService(es)
     export_svc = ExportService(es, config.EXPORT_DIR)
     alerts_svc = AlertsService(es)
+    dca_svc = DCAService(es)
 
     # Scheduler
-    scheduler = SchedulerManager(es, settings_svc, collector_svc, export_svc, alerts_svc)
+    scheduler = SchedulerManager(es, settings_svc, collector_svc, export_svc, alerts_svc, dca_svc)
     await scheduler.start()
 
     # Store on app state
@@ -90,6 +92,7 @@ async def lifespan(app: FastAPI):
     app.state.paper_trading_service = paper_svc
     app.state.export_service = export_svc
     app.state.alerts_service = alerts_svc
+    app.state.dca_service = dca_svc
     app.state.scheduler = scheduler
 
     logger.info("Backend ready")

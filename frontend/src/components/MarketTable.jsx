@@ -65,8 +65,18 @@ export default function MarketTable({
   sortField = "",
   sortOrder = "desc",
   onSort,
+  positions = [],
 }) {
   const navigate = useNavigate();
+
+  // Build a lookup: market_id -> position data
+  const posMap = {};
+  for (const p of positions) {
+    if (!posMap[p.market_id]) {
+      posMap[p.market_id] = p;
+    }
+  }
+  const showBetCol = positions.length > 0;
 
   const handleHeaderClick = (col) => {
     if (!col.sortable || !onSort) return;
@@ -103,6 +113,7 @@ export default function MarketTable({
                 )}
               </th>
             ))}
+            {showBetCol && <th className="pb-2 font-medium w-28">Bet</th>}
             {showTrackButton && <th className="pb-2 font-medium w-20"></th>}
           </tr>
         </thead>
@@ -149,6 +160,26 @@ export default function MarketTable({
                   </span>
                 )}
               </td>
+              {showBetCol && (
+                <td className="py-2.5 pr-4">
+                  {posMap[m.market_id] ? (
+                    <span
+                      className={`text-xs font-medium ${
+                        posMap[m.market_id].unrealized_pnl >= 0
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {posMap[m.market_id].unrealized_pnl >= 0 ? "+" : ""}
+                      ${posMap[m.market_id].unrealized_pnl.toFixed(2)}{" "}
+                      ({posMap[m.market_id].unrealized_pnl_pct >= 0 ? "+" : ""}
+                      {posMap[m.market_id].unrealized_pnl_pct.toFixed(1)}%)
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-300">&mdash;</span>
+                  )}
+                </td>
+              )}
               {showTrackButton && (
                 <td className="py-2.5">
                   <button

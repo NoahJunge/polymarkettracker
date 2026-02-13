@@ -123,6 +123,21 @@ ALERTS_MAPPING = {
     },
 }
 
+DCA_SUBSCRIPTIONS_MAPPING = {
+    "mappings": {
+        "properties": {
+            "dca_id": {"type": "keyword"},
+            "market_id": {"type": "keyword"},
+            "side": {"type": "keyword"},
+            "quantity": {"type": "double"},
+            "active": {"type": "boolean"},
+            "created_at_utc": {"type": "date"},
+            "last_executed_date": {"type": "keyword"},
+            "total_trades_placed": {"type": "integer"},
+        }
+    },
+}
+
 ALL_INDICES = {
     "markets": MARKETS_MAPPING,
     "snapshots_wide": SNAPSHOTS_WIDE_MAPPING,
@@ -130,4 +145,5 @@ ALL_INDICES = {
     "paper_trades": PAPER_TRADES_MAPPING,
     "settings": SETTINGS_MAPPING,
     "alerts": ALERTS_MAPPING,
+    "dca_subscriptions": DCA_SUBSCRIPTIONS_MAPPING,
 }
