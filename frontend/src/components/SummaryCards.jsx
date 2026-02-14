@@ -41,34 +41,32 @@ export default function SummaryCards({ summary, portfolio }) {
             <span className="text-sm font-semibold">{total_discovered}</span>
           </div>
           {portfolio && (
-            <>
-              <div className="border-t border-slate-100 pt-2 mt-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-600">Unrealized P&L</span>
-                  <span
-                    className={`text-sm font-semibold ${
-                      (portfolio.unrealized_pnl || 0) >= 0
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
-                  >
-                    ${(portfolio.unrealized_pnl || 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-slate-600">Realized P&L</span>
-                  <span
-                    className={`text-sm font-semibold ${
-                      (portfolio.realized_pnl || 0) >= 0
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
-                  >
-                    ${(portfolio.realized_pnl || 0).toFixed(2)}
-                  </span>
-                </div>
+            <div className="border-t border-slate-100 pt-2 mt-2 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-600">Unrealized P&L</span>
+                <span
+                  className={`text-sm font-semibold ${
+                    (portfolio.total_unrealized_pnl || 0) >= 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  ${(portfolio.total_unrealized_pnl || 0).toFixed(2)}
+                </span>
               </div>
-            </>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-600">Realized P&L</span>
+                <span
+                  className={`text-sm font-semibold ${
+                    (portfolio.total_realized_pnl || 0) >= 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  ${(portfolio.total_realized_pnl || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
           )}
         </div>
       </div>
