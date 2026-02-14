@@ -63,18 +63,32 @@ class ESClient:
         sort: list | None = None,
         size: int = 100,
         from_: int = 0,
+        collapse: str | None = None,
     ) -> dict:
         body: dict[str, Any] = {"size": size, "from": from_}
         if query:
             body["query"] = query
         if sort:
             body["sort"] = sort
+        if collapse:
+            body["collapse"] = {"field": collapse}
         return await self.client.search(index=index, body=body)
 
     async def count(self, index: str, query: dict | None = None) -> int:
         body = {"query": query} if query else {}
         result = await self.client.count(index=index, body=body)
         return result["count"]
+
+    async def mget(self, index: str, ids: list[str]) -> dict[str, dict]:
+        """Fetch multiple documents by ID. Returns {doc_id: source} for found docs."""
+        if not ids:
+            return {}
+        result = await self.client.mget(index=index, ids=ids)
+        return {
+            doc["_id"]: doc["_source"]
+            for doc in result["docs"]
+            if doc.get("found")
+        }
 
     async def bulk_index(
         self, index: str, documents: list[dict], id_field: str | None = None

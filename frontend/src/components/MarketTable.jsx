@@ -94,6 +94,7 @@ export default function MarketTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-slate-500">
+            <th className="pb-2 pr-2 font-medium w-10 text-slate-400">#</th>
             {COLUMNS.map((col) => (
               <th
                 key={col.key}
@@ -118,12 +119,15 @@ export default function MarketTable({
           </tr>
         </thead>
         <tbody>
-          {markets.map((m) => (
+          {markets.map((m, idx) => (
             <tr
               key={m.market_id}
               className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
               onClick={() => navigate(`/markets/${m.market_id}`)}
             >
+              <td className="py-2.5 pr-2 text-xs text-slate-400 font-mono">
+                {idx + 1}
+              </td>
               <td className="py-2.5 pr-4 max-w-md">
                 <span className="line-clamp-2">{m.question || m.market_id}</span>
               </td>

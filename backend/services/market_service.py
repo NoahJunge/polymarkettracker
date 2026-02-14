@@ -273,28 +273,40 @@ class MarketService:
         }
 
     async def _enrich_with_prices(self, markets: list[dict]):
-        """Add latest yes_price/no_price from snapshots, falling back to market-level prices."""
+        """Add latest yes_price/no_price from snapshots using a single batched query."""
+        market_ids = [m.get("market_id") for m in markets if m.get("market_id")]
+        if not market_ids:
+            return
+
+        # One query: latest snapshot per market using collapse
+        result = await self.es.search(
+            SNAPSHOTS_INDEX,
+            query={"terms": {"market_id": market_ids}},
+            sort=[{"timestamp_utc": {"order": "desc"}}],
+            size=len(market_ids),
+            collapse="market_id",
+        )
+        snap_map = {}
+        for hit in result["hits"]["hits"]:
+            s = hit["_source"]
+            snap_map[s["market_id"]] = s
+
         for m in markets:
             mid = m.get("market_id")
-            if not mid:
-                continue
-            result = await self.es.search(
-                SNAPSHOTS_INDEX,
-                query={"term": {"market_id": mid}},
-                sort=[{"timestamp_utc": {"order": "desc"}}],
-                size=1,
-            )
-            if result["hits"]["hits"]:
-                snap = result["hits"]["hits"][0]["_source"]
+            snap = snap_map.get(mid)
+            if snap:
                 m["yes_price"] = snap.get("yes_price")
                 m["no_price"] = snap.get("no_price")
                 m["latest_snapshot_utc"] = snap.get("timestamp_utc")
 
     async def _enrich_with_tracking(self, markets: list[dict]):
-        """Add is_tracked flag from tracked_markets index."""
+        """Add is_tracked flag from tracked_markets index using a single mget."""
+        market_ids = [m.get("market_id") for m in markets if m.get("market_id")]
+        if not market_ids:
+            return
+
+        tracked_map = await self.es.mget(TRACKED_INDEX, market_ids)
         for m in markets:
             mid = m.get("market_id")
-            if not mid:
-                continue
-            tracked = await self.es.get(TRACKED_INDEX, mid)
+            tracked = tracked_map.get(mid)
             m["is_tracked"] = bool(tracked and tracked.get("is_tracked"))

@@ -92,20 +92,41 @@ class PaperTradingService:
     async def get_open_positions(self) -> list[Position]:
         """Compute current open positions with mark-to-market values."""
         positions_data = await self._aggregate_positions()
+
+        # Filter to positions with net quantity > 0
+        open_positions = {
+            k: v for k, v in positions_data.items() if v["net_quantity"] > 0
+        }
+        if not open_positions:
+            return []
+
+        # Batch fetch: all unique market_ids
+        market_ids = list(set(mid for mid, _ in open_positions.keys()))
+
+        # One query: latest snapshot per market using collapse
+        snap_result = await self.es.search(
+            SNAPSHOTS_INDEX,
+            query={"terms": {"market_id": market_ids}},
+            sort=[{"timestamp_utc": {"order": "desc"}}],
+            size=len(market_ids),
+            collapse="market_id",
+        )
+        snap_map = {}
+        for hit in snap_result["hits"]["hits"]:
+            s = hit["_source"]
+            snap_map[s["market_id"]] = s
+
+        # One mget: all market metadata
+        market_map = await self.es.mget(MARKETS_INDEX, market_ids)
+
         result = []
-
-        for (market_id, side), pos in positions_data.items():
-            if pos["net_quantity"] <= 0:
-                continue
-
-            # Get latest snapshot for current price
-            snapshot = await self._nearest_snapshot(market_id)
+        for (market_id, side), pos in open_positions.items():
+            snapshot = snap_map.get(market_id)
             current_price = 0.0
             if snapshot:
                 current_price = snapshot["yes_price"] if side == "YES" else snapshot["no_price"]
 
-            # Get market question
-            market = await self.es.get(MARKETS_INDEX, market_id)
+            market = market_map.get(market_id)
             question = market.get("question", "") if market else ""
 
             market_value = pos["net_quantity"] * current_price
