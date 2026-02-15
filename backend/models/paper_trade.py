@@ -43,6 +43,8 @@ class Position(BaseModel):
     market_value: float
     unrealized_pnl: float
     unrealized_pnl_pct: float
+    last_trade_date: str = ""
+    closed: bool = False
 
 
 class PortfolioSummary(BaseModel):

@@ -128,6 +128,7 @@ class PaperTradingService:
 
             market = market_map.get(market_id)
             question = market.get("question", "") if market else ""
+            is_closed = bool(market.get("closed")) if market else False
 
             market_value = pos["net_quantity"] * current_price
             cost_basis = pos["net_quantity"] * pos["avg_entry_price"]
@@ -145,6 +146,8 @@ class PaperTradingService:
                     market_value=round(market_value, 4),
                     unrealized_pnl=round(unrealized_pnl, 4),
                     unrealized_pnl_pct=round(pnl_pct, 2),
+                    last_trade_date=pos["last_trade_date"],
+                    closed=is_closed,
                 )
             )
 
@@ -225,7 +228,7 @@ class PaperTradingService:
         """Aggregate trades into net positions per (market_id, side)."""
         trades = await self._get_all_trades()
         positions: dict[tuple[str, str], dict] = defaultdict(
-            lambda: {"open_quantity": 0.0, "open_cost": 0.0, "close_quantity": 0.0, "close_revenue": 0.0}
+            lambda: {"open_quantity": 0.0, "open_cost": 0.0, "close_quantity": 0.0, "close_revenue": 0.0, "last_trade_date": ""}
         )
 
         for t in trades:
@@ -239,6 +242,11 @@ class PaperTradingService:
             elif t["action"] == "CLOSE":
                 positions[key]["close_quantity"] += qty
                 positions[key]["close_revenue"] += qty * price
+
+            # Track latest trade date
+            trade_date = t.get("created_at_utc", "")[:10]
+            if trade_date > positions[key]["last_trade_date"]:
+                positions[key]["last_trade_date"] = trade_date
 
         # Compute net quantities and avg entry prices
         result = {}
@@ -256,6 +264,7 @@ class PaperTradingService:
                 "open_cost": pos["open_cost"],
                 "close_quantity": pos["close_quantity"],
                 "close_revenue": pos["close_revenue"],
+                "last_trade_date": pos["last_trade_date"],
             }
 
         return result

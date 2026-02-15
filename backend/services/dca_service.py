@@ -174,6 +174,7 @@ class DCAService:
         subs = [h["_source"] for h in result["hits"]["hits"]]
 
         trades_placed = 0
+        skipped_closed = 0
         for sub in subs:
             if sub.get("last_executed_date") == today_date:
                 continue
@@ -182,6 +183,13 @@ class DCAService:
             side = sub["side"]
             quantity = sub["quantity"]
             dca_id = sub["dca_id"]
+
+            # Skip closed markets
+            market = await self.es.get(MARKETS_INDEX, market_id)
+            if market and market.get("closed"):
+                skipped_closed += 1
+                logger.info("Skipping DCA for closed market %s", market_id)
+                continue
 
             # Find latest snapshot for this market
             snap_result = await self.es.search(
@@ -222,7 +230,7 @@ class DCAService:
             trades_placed += 1
             logger.info("DCA daily trade for %s: %s %s @ %.4f", dca_id, side, market_id, price)
 
-        return {"subscriptions_processed": len(subs), "trades_placed": trades_placed}
+        return {"subscriptions_processed": len(subs), "trades_placed": trades_placed, "skipped_closed": skipped_closed}
 
     async def get_subscriptions(self, market_id: str | None = None) -> list[dict]:
         """Get all DCA subscriptions, optionally filtered by market."""

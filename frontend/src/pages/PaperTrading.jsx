@@ -154,6 +154,7 @@ export default function PaperTrading() {
                 <tr className="border-b border-slate-200 text-left text-slate-500">
                   <th className="pb-2 pr-2 font-medium w-10 text-slate-400">#</th>
                   <th className="pb-2 pr-4 font-medium">Market</th>
+                  <th className="pb-2 pr-4 font-medium">Last bet:</th>
                   <th className="pb-2 pr-4 font-medium">Side</th>
                   <th
                     className="pb-2 pr-4 font-medium cursor-pointer select-none hover:text-slate-800"
@@ -184,6 +185,7 @@ export default function PaperTrading() {
                     P&L
                     <SortIcon field="unrealized_pnl" />
                   </th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
                   <th className="pb-2 font-medium"></th>
                 </tr>
               </thead>
@@ -200,6 +202,11 @@ export default function PaperTrading() {
                       <span className="line-clamp-1">
                         {p.question || p.market_id}
                       </span>
+                    </td>
+                    <td className="py-2 pr-4 text-xs text-slate-600 whitespace-nowrap">
+                      {p.last_trade_date
+                        ? `${parseInt(p.last_trade_date.slice(8))}/${parseInt(p.last_trade_date.slice(5, 7))}`
+                        : "—"}
                     </td>
                     <td className="py-2 pr-4">
                       <span
@@ -231,6 +238,17 @@ export default function PaperTrading() {
                         2
                       )}{" "}
                       ({p.unrealized_pnl_pct.toFixed(1)}%)
+                    </td>
+                    <td className="py-2 pr-4">
+                      {p.closed ? (
+                        <span className="text-xs font-semibold text-red-600">
+                          CLOSED
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold text-green-600">
+                          LIVE
+                        </span>
+                      )}
                     </td>
                     <td className="py-2">
                       <button
