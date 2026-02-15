@@ -68,6 +68,7 @@ export default function PaperTrading() {
       const q = tradeSearch.toLowerCase();
       list = list.filter(
         (t) =>
+          (t.question || "").toLowerCase().includes(q) ||
           (t.market_id || "").toLowerCase().includes(q) ||
           (t.side || "").toLowerCase().includes(q)
       );
@@ -310,7 +311,7 @@ export default function PaperTrading() {
                       </td>
                       <td className="py-1.5 pr-4 max-w-xs">
                         <span className="line-clamp-1 text-xs">
-                          {t.market_id}
+                          {t.question || t.market_id}
                         </span>
                       </td>
                       <td className="py-1.5 pr-4 font-mono">{t.quantity}</td>

@@ -172,14 +172,24 @@ class PaperTradingService:
         )
 
     async def get_all_trades(self) -> list[dict]:
-        """Get all paper trades, newest first."""
+        """Get all paper trades, newest first, enriched with market questions."""
         result = await self.es.search(
             PAPER_TRADES_INDEX,
             query={"match_all": {}},
             sort=[{"created_at_utc": {"order": "desc"}}],
             size=10000,
         )
-        return [hit["_source"] for hit in result["hits"]["hits"]]
+        trades = [hit["_source"] for hit in result["hits"]["hits"]]
+
+        # Batch fetch market questions
+        market_ids = list(set(t["market_id"] for t in trades if t.get("market_id")))
+        if market_ids:
+            market_map = await self.es.mget(MARKETS_INDEX, market_ids)
+            for t in trades:
+                m = market_map.get(t["market_id"])
+                t["question"] = m.get("question", "") if m else ""
+
+        return trades
 
     async def _nearest_snapshot(
         self, market_id: str, timestamp: datetime | None = None

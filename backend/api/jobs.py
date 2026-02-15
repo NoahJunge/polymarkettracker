@@ -1,4 +1,4 @@
-"""Collector job control API endpoints."""
+"""Collector and DCA job control API endpoints."""
 
 from fastapi import APIRouter, Request
 
@@ -10,6 +10,13 @@ async def run_collector(request: Request):
     scheduler = request.app.state.scheduler
     stats = await scheduler.run_collector_now()
     return stats
+
+
+@router.post("/jobs/dca")
+async def run_dca(request: Request):
+    scheduler = request.app.state.scheduler
+    result = await scheduler.run_dca_now()
+    return result
 
 
 @router.get("/jobs/status")

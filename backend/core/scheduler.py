@@ -143,8 +143,14 @@ class SchedulerManager:
             "is_collecting": self.collector_svc.is_running,
         }
 
+    async def run_dca_now(self) -> dict:
+        """Trigger an immediate DCA execution."""
+        if not self.dca_svc:
+            return {"error": "DCA service not configured"}
+        return await self._run_dca()
+
     async def _run_collector(self) -> dict:
-        """Internal: run the collector, then check alerts."""
+        """Internal: run the collector, then check alerts, then run DCA."""
         logger.info("Starting collector run")
         result = await self.collector_svc.run()
         # Check price alerts after fresh data is collected
@@ -155,6 +161,13 @@ class SchedulerManager:
                     logger.info("Triggered %d price alerts", len(triggered))
             except Exception as e:
                 logger.error("Alert check failed: %s", e)
+        # Run DCA after collection so new-day bets use fresh snapshots
+        if self.dca_svc:
+            try:
+                dca_result = await self.dca_svc.execute_daily()
+                logger.info("DCA after collection: %s", dca_result)
+            except Exception as e:
+                logger.error("DCA after collection failed: %s", e)
         return result
 
     async def _run_export(self):
@@ -164,10 +177,11 @@ class SchedulerManager:
         if filepath:
             logger.info("Daily export completed: %s", filepath)
 
-    async def _run_dca(self):
+    async def _run_dca(self) -> dict:
         """Internal: run daily DCA trades."""
         if not self.dca_svc:
-            return
+            return {"error": "DCA service not configured"}
         logger.info("Starting DCA daily execution")
         result = await self.dca_svc.execute_daily()
         logger.info("DCA daily execution complete: %s", result)
+        return result
