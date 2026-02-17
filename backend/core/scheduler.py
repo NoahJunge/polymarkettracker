@@ -1,6 +1,8 @@
 """Scheduler manager — APScheduler integration for collection and export jobs."""
 
+import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -150,7 +152,7 @@ class SchedulerManager:
         return await self._run_dca()
 
     async def _run_collector(self) -> dict:
-        """Internal: run the collector, then check alerts, then run DCA."""
+        """Internal: run the collector, then check alerts, then run DCA, then export+push."""
         logger.info("Starting collector run")
         result = await self.collector_svc.run()
         # Check price alerts after fresh data is collected
@@ -168,6 +170,11 @@ class SchedulerManager:
                 logger.info("DCA after collection: %s", dca_result)
             except Exception as e:
                 logger.error("DCA after collection failed: %s", e)
+        # Export seed data and push to GitHub
+        try:
+            await self._export_and_push()
+        except Exception as e:
+            logger.error("Seed export/push failed: %s", e)
         return result
 
     async def _run_export(self):
@@ -185,3 +192,77 @@ class SchedulerManager:
         result = await self.dca_svc.execute_daily()
         logger.info("DCA daily execution complete: %s", result)
         return result
+
+    async def _export_and_push(self):
+        """Export seed data and push to GitHub (best-effort)."""
+        # Export seed data
+        proc = await asyncio.create_subprocess_exec(
+            "python", "export_seed.py",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.error("Seed export failed: %s", stderr.decode())
+            return
+        logger.info("Seed data exported")
+
+        # Check for GITHUB_TOKEN
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            logger.info("GITHUB_TOKEN not set — skipping git push")
+            return
+
+        repo_dir = "/repo"
+        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+            logger.warning("Git repo not found at %s — skipping push", repo_dir)
+            return
+
+        # Configure git for container environment
+        await self._run_git(repo_dir, ["git", "config", "--global", "safe.directory", repo_dir])
+        await self._run_git(repo_dir, ["git", "config", "--global", "user.email", "bot@polymarkettracker.local"])
+        await self._run_git(repo_dir, ["git", "config", "--global", "user.name", "Polymarket Bot"])
+
+        # Stage seed file
+        await self._run_git(repo_dir, ["git", "add", "backend/seed_data/seed.xlsx"])
+
+        # Check if there are staged changes
+        proc = await asyncio.create_subprocess_exec(
+            "git", "diff", "--cached", "--quiet",
+            cwd=repo_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        if proc.returncode == 0:
+            logger.info("No seed data changes to commit")
+            return
+
+        # Commit
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        await self._run_git(repo_dir, [
+            "git", "commit", "-m", f"Auto-update seed data ({ts})",
+        ])
+
+        # Push using token-authenticated URL
+        remote_out = await self._run_git(repo_dir, ["git", "remote", "get-url", "origin"])
+        remote_url = remote_out.strip()
+        if remote_url.startswith("https://"):
+            push_url = remote_url.replace("https://", f"https://x-access-token:{token}@")
+        else:
+            push_url = remote_url
+        await self._run_git(repo_dir, ["git", "push", push_url, "main"])
+        logger.info("Seed data pushed to GitHub")
+
+    async def _run_git(self, cwd: str, cmd: list[str]) -> str:
+        """Run a git command and return stdout."""
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"git failed ({' '.join(cmd[:3])}): {stderr.decode().strip()}")
+        return stdout.decode()

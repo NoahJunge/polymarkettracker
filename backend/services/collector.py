@@ -212,6 +212,14 @@ class CollectorService:
                     "updated_at_utc": now,
                 })
 
+        # Filter out closed markets
+        if tracked_ids:
+            markets = await self.es.mget(MARKETS_INDEX, list(tracked_ids))
+            closed_ids = {mid for mid, data in markets.items() if data and data.get("closed")}
+            if closed_ids:
+                logger.info("Skipping %d closed markets", len(closed_ids))
+                tracked_ids -= closed_ids
+
         return list(tracked_ids)
 
     async def _collect_snapshots(
@@ -247,6 +255,18 @@ class CollectorService:
 
                 if not outcomes or not outcome_prices or len(outcomes) < 2 or len(outcome_prices) < 2:
                     errors.append(f"Market {mid}: invalid outcomes/prices")
+                    continue
+
+                # Detect newly-closed markets and update status
+                if market_data.get("closed"):
+                    try:
+                        await self.es.update(MARKETS_INDEX, mid, {
+                            "closed": True,
+                            "active": market_data.get("active", True),
+                        })
+                    except Exception:
+                        pass  # Market may not exist in index yet
+                    logger.info("Market %s is now closed, skipping snapshot", mid)
                     continue
 
                 yes_price, no_price = normalize_yes_no_prices(outcomes, outcome_prices)

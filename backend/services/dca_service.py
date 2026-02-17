@@ -184,11 +184,12 @@ class DCAService:
             quantity = sub["quantity"]
             dca_id = sub["dca_id"]
 
-            # Skip closed markets
+            # Auto-cancel DCA on closed markets
             market = await self.es.get(MARKETS_INDEX, market_id)
             if market and market.get("closed"):
                 skipped_closed += 1
-                logger.info("Skipping DCA for closed market %s", market_id)
+                await self.es.update(DCA_INDEX, dca_id, {"active": False})
+                logger.info("Auto-cancelled DCA %s — market %s is closed", dca_id, market_id)
                 continue
 
             # Find latest snapshot for this market

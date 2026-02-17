@@ -22,11 +22,13 @@ services:
     environment:
       - ES_HOST=http://elasticsearch:9200
       - LOG_LEVEL=INFO
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:
       - ./exports:/exports
       - ./backend:/app
+      - .:/repo
     depends_on:
       elasticsearch:
         condition: service_healthy
