@@ -54,3 +54,35 @@ class PortfolioSummary(BaseModel):
     total_realized_pnl: float = 0.0
     open_position_count: int = 0
     total_trades: int = 0
+
+
+class EquityCurvePoint(BaseModel):
+    date: str
+    total_pnl: float  # unrealized + realized combined
+    unrealized_pnl: float
+    realized_pnl: float
+    cumulative_invested: float
+    portfolio_value: float  # current market value of open positions
+    total_open_trades: int
+    total_close_trades: int
+
+
+class PortfolioStats(BaseModel):
+    win_rate: float | None = None
+    profit_factor: float | None = None
+    sharpe_ratio: float | None = None
+    max_drawdown: float | None = None
+    avg_win: float | None = None
+    avg_loss: float | None = None
+    total_wins: int = 0
+    total_losses: int = 0
+    regression_slope: float | None = None
+    regression_r_squared: float | None = None
+    regression_p_value: float | None = None
+    trend_direction: str | None = None  # "up", "down", or "none"
+    trend_significant: bool = False
+
+
+class EquityCurveResponse(BaseModel):
+    curve: list[EquityCurvePoint]
+    stats: PortfolioStats

@@ -15,6 +15,14 @@ export const getSnapshots = (id, params = {}) =>
 export const getNewBets = (params = {}) => api.get("/new_bets", { params });
 export const exportNewBets = () =>
   api.get("/new_bets/export", { responseType: "blob" });
+export const exportNewBetsFiltered = (excludeFile) => {
+  const form = new FormData();
+  form.append("file", excludeFile);
+  return api.post("/new_bets/export", form, {
+    responseType: "blob",
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
 export const getCategories = () => api.get("/markets/categories");
 export const getDashboardSummary = () => api.get("/markets/summary");
 
@@ -32,6 +40,7 @@ export const openTrade = (body) => api.post("/paper_trades/open", body);
 export const closeTrade = (body) => api.post("/paper_trades/close", body);
 export const getPositions = () => api.get("/paper_positions");
 export const getPortfolioSummary = () => api.get("/paper_portfolio/summary");
+export const getEquityCurve = () => api.get("/paper_portfolio/equity_curve");
 export const getAllTrades = () => api.get("/paper_trades");
 
 // --- Settings ---

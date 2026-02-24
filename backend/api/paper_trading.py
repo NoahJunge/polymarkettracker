@@ -41,6 +41,13 @@ async def get_portfolio_summary(request: Request):
     return summary.model_dump(mode="json")
 
 
+@router.get("/paper_portfolio/equity_curve")
+async def get_equity_curve(request: Request):
+    svc = request.app.state.paper_trading_service
+    result = await svc.get_equity_curve()
+    return result.model_dump(mode="json")
+
+
 @router.get("/paper_trades")
 async def get_all_trades(request: Request):
     svc = request.app.state.paper_trading_service

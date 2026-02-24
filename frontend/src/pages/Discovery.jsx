@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getNewBets, getCategories, setTracking, exportNewBets } from "../api/client";
+import { getNewBets, getCategories, setTracking, exportNewBets, exportNewBetsFiltered } from "../api/client";
 import MarketTable from "../components/MarketTable";
 
 const PAGE_SIZE = 50;
@@ -15,6 +15,8 @@ export default function Discovery() {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [excludeFile, setExcludeFile] = useState(null);
+  const [exportingFiltered, setExportingFiltered] = useState(false);
 
   const load = async (pageOverride) => {
     setLoading(true);
@@ -101,6 +103,31 @@ export default function Discovery() {
     }
   };
 
+  const handleExportFiltered = async () => {
+    if (!excludeFile) return;
+    setExportingFiltered(true);
+    try {
+      const res = await exportNewBetsFiltered(excludeFile);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      const disposition = res.headers["content-disposition"];
+      const filename = disposition
+        ? disposition.split("filename=")[1]
+        : "discovery_new.xlsx";
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Filtered export failed", err);
+      alert("Filtered export failed.");
+    } finally {
+      setExportingFiltered(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const from = page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
@@ -166,13 +193,28 @@ export default function Discovery() {
           </button>
         )}
 
-        <button
-          onClick={handleExport}
-          disabled={exporting || total === 0}
-          className="ml-auto px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {exporting ? "Exporting..." : "Export to Excel"}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => setExcludeFile(e.target.files[0] || null)}
+            className="text-sm text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+          />
+          <button
+            onClick={handleExportFiltered}
+            disabled={exportingFiltered || !excludeFile}
+            className="px-3 py-1.5 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {exportingFiltered ? "Exporting..." : "Export New Only"}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting || total === 0}
+            className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
+          >
+            {exporting ? "Exporting..." : "Export All"}
+          </button>
+        </div>
       </div>
 
       {loading && markets.length === 0 ? (

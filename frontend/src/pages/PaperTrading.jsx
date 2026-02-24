@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPositions, getPortfolioSummary, getAllTrades } from "../api/client";
+import { getPositions, getPortfolioSummary, getAllTrades, getEquityCurve } from "../api/client";
 import PortfolioSummary from "../components/PortfolioSummary";
+import EquityCurve from "../components/EquityCurve";
+import PortfolioStats from "../components/PortfolioStats";
 
 function formatPrice(p) {
   if (p == null) return "—";
@@ -13,6 +15,7 @@ export default function PaperTrading() {
   const [positions, setPositions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [trades, setTrades] = useState([]);
+  const [equityCurve, setEquityCurve] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState("unrealized_pnl");
@@ -23,14 +26,16 @@ export default function PaperTrading() {
   const load = async () => {
     setLoading(true);
     try {
-      const [pRes, sRes, tRes] = await Promise.all([
+      const [pRes, sRes, tRes, ecRes] = await Promise.all([
         getPositions(),
         getPortfolioSummary(),
         getAllTrades(),
+        getEquityCurve(),
       ]);
       setPositions(pRes.data);
       setSummary(sRes.data);
       setTrades(tRes.data);
+      setEquityCurve(ecRes.data);
     } catch (err) {
       console.error("Failed to load paper trading data", err);
     } finally {
@@ -126,6 +131,15 @@ export default function PaperTrading() {
 
       {/* Portfolio Summary */}
       <PortfolioSummary summary={summary} />
+
+      {/* Equity Curve */}
+      <EquityCurve
+        curve={equityCurve?.curve}
+        stats={equityCurve?.stats}
+      />
+
+      {/* Portfolio Stats */}
+      <PortfolioStats stats={equityCurve?.stats} />
 
       {/* Open Positions */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">
