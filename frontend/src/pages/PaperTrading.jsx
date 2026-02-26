@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPositions, getPortfolioSummary, getAllTrades, getEquityCurve } from "../api/client";
+import { getPositions, getPortfolioSummary, getAllTrades, getEquityCurveDual } from "../api/client";
 import PortfolioSummary from "../components/PortfolioSummary";
 import EquityCurve from "../components/EquityCurve";
 import PortfolioStats from "../components/PortfolioStats";
+import DailyUnrealizedChart from "../components/DailyUnrealizedChart";
+import MonteCarloSection from "../components/MonteCarloSection";
 
 function formatPrice(p) {
   if (p == null) return "—";
@@ -17,6 +19,8 @@ export default function PaperTrading() {
   const [trades, setTrades] = useState([]);
   const [equityCurve, setEquityCurve] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [curveMode, setCurveMode] = useState("pro"); // "pro" | "anti" | "dual"
+  const [dualCurve, setDualCurve] = useState(null); // { pro_trump, anti_trump }
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState("unrealized_pnl");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -30,12 +34,14 @@ export default function PaperTrading() {
         getPositions(),
         getPortfolioSummary(),
         getAllTrades(),
-        getEquityCurve(),
+        getEquityCurveDual(),
       ]);
       setPositions(pRes.data);
       setSummary(sRes.data);
       setTrades(tRes.data);
-      setEquityCurve(ecRes.data);
+      setDualCurve(ecRes.data);
+      // Set the primary equity curve to the pro-Trump view for other components
+      setEquityCurve(ecRes.data?.pro_trump ?? null);
     } catch (err) {
       console.error("Failed to load paper trading data", err);
     } finally {
@@ -132,14 +138,48 @@ export default function PaperTrading() {
       {/* Portfolio Summary */}
       <PortfolioSummary summary={summary} />
 
+      {/* Curve mode toggle */}
+      <div className="flex items-center gap-2">
+        {[
+          { key: "pro", label: "Pro-Trump" },
+          { key: "anti", label: "Anti-Trump" },
+          { key: "dual", label: "Compare Both" },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setCurveMode(key)}
+            className={`text-sm px-3 py-1.5 rounded border transition-colors ${
+              curveMode === key
+                ? "bg-slate-800 text-white border-slate-800"
+                : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Equity Curve */}
       <EquityCurve
-        curve={equityCurve?.curve}
-        stats={equityCurve?.stats}
+        curve={dualCurve?.pro_trump?.curve}
+        stats={dualCurve?.pro_trump?.stats}
+        antiCurve={dualCurve?.anti_trump?.curve}
+        antiStats={dualCurve?.anti_trump?.stats}
+        mode={curveMode}
+      />
+
+      {/* Daily Unrealized Return */}
+      <DailyUnrealizedChart
+        curve={curveMode === "anti" ? dualCurve?.anti_trump?.curve : dualCurve?.pro_trump?.curve}
       />
 
       {/* Portfolio Stats */}
-      <PortfolioStats stats={equityCurve?.stats} />
+      <PortfolioStats
+        stats={curveMode === "anti" ? dualCurve?.anti_trump?.stats : dualCurve?.pro_trump?.stats}
+      />
+
+      {/* Monte Carlo Simulation */}
+      <MonteCarloSection />
 
       {/* Open Positions */}
       <div className="bg-white rounded-lg border border-slate-200 p-4">

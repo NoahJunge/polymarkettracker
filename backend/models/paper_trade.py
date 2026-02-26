@@ -86,3 +86,31 @@ class PortfolioStats(BaseModel):
 class EquityCurveResponse(BaseModel):
     curve: list[EquityCurvePoint]
     stats: PortfolioStats
+
+
+class MonteCarloHistogramBin(BaseModel):
+    bin_start: float
+    bin_end: float
+    count: int
+
+
+class MonteCarloPercentageResult(BaseModel):
+    percentage: float        # e.g. 70.0
+    iterations: int
+    mean: float
+    median: float
+    std: float
+    p5: float
+    p25: float
+    p75: float
+    p95: float
+    prob_positive: float     # fraction of iterations where total_pnl > 0, range [0, 1]
+    histogram: list[MonteCarloHistogramBin]
+    markets_sampled: int     # number of markets per iteration
+    total_markets: int       # total markets in the pool
+
+
+class MonteCarloResponse(BaseModel):
+    results: list[MonteCarloPercentageResult]
+    total_markets: int
+    iterations: int

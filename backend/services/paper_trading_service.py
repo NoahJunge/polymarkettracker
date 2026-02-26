@@ -1,6 +1,8 @@
 """Paper trading service — open/close trades, compute positions and P&L."""
 
 import logging
+import math
+import random
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -15,6 +17,9 @@ from models.paper_trade import (
     EquityCurvePoint,
     PortfolioStats,
     EquityCurveResponse,
+    MonteCarloHistogramBin,
+    MonteCarloPercentageResult,
+    MonteCarloResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -272,14 +277,14 @@ class PaperTradingService:
 
         return result
 
-    async def get_equity_curve(self) -> EquityCurveResponse:
-        """Compute equity curve with mark-to-market unrealized P&L."""
+    async def _fetch_equity_data(self) -> tuple[list[dict], dict]:
+        """Fetch (trades sorted ASC, daily_prices) from ES — reusable for all curve variants."""
         import asyncio
         from datetime import date as date_cls, timedelta
 
         trades = await self._get_all_trades()
         if not trades:
-            return EquityCurveResponse(curve=[], stats=PortfolioStats())
+            return trades, {}
 
         market_ids = list(set(t["market_id"] for t in trades))
 
@@ -294,7 +299,6 @@ class PaperTradingService:
             dates.append(d.isoformat())
             d += timedelta(days=1)
 
-        # Fetch latest snapshot per market for each date using collapse
         async def fetch_day_prices(date_str: str) -> tuple[str, dict]:
             result = await self.es.search(
                 SNAPSHOTS_INDEX,
@@ -320,7 +324,6 @@ class PaperTradingService:
             return date_str, prices
 
         daily_prices: dict[str, dict] = {}
-        # Batch 10 concurrent queries at a time
         for i in range(0, len(dates), 10):
             batch = dates[i : i + 10]
             results = await asyncio.gather(*(fetch_day_prices(d) for d in batch))
@@ -328,20 +331,46 @@ class PaperTradingService:
                 if prices:
                     daily_prices[date_str] = prices
 
-        curve = self._compute_equity_curve(trades, daily_prices)
+        return trades, daily_prices
+
+    async def get_equity_curve(self, flip_sides: bool = False) -> EquityCurveResponse:
+        """Compute equity curve with mark-to-market unrealized P&L.
+
+        Args:
+            flip_sides: If True, swap YES↔NO on all trades to simulate betting
+                        against Trump (opposite of current positions).
+        """
+        trades, daily_prices = await self._fetch_equity_data()
+        if not trades:
+            return EquityCurveResponse(curve=[], stats=PortfolioStats())
+        curve = self._compute_equity_curve(trades, daily_prices, flip_sides=flip_sides)
         stats = self._compute_portfolio_stats(trades, curve)
         return EquityCurveResponse(curve=curve, stats=stats)
+
+    async def get_equity_curve_dual(self) -> dict:
+        """Compute both pro-Trump and anti-Trump equity curves from a single ES fetch."""
+        trades, daily_prices = await self._fetch_equity_data()
+        if not trades:
+            empty = EquityCurveResponse(curve=[], stats=PortfolioStats())
+            return {"pro_trump": empty.model_dump(mode="json"), "anti_trump": empty.model_dump(mode="json")}
+        pro_curve = self._compute_equity_curve(trades, daily_prices, flip_sides=False)
+        anti_curve = self._compute_equity_curve(trades, daily_prices, flip_sides=True)
+        pro = EquityCurveResponse(curve=pro_curve, stats=self._compute_portfolio_stats(trades, pro_curve))
+        anti = EquityCurveResponse(curve=anti_curve, stats=self._compute_portfolio_stats(trades, anti_curve))
+        return {"pro_trump": pro.model_dump(mode="json"), "anti_trump": anti.model_dump(mode="json")}
 
     @staticmethod
     def _compute_equity_curve(
         trades: list[dict],
         daily_prices: dict[str, dict[str, dict]],
+        flip_sides: bool = False,
     ) -> list[EquityCurvePoint]:
         """Replay trades chronologically and mark-to-market using daily snapshot prices.
 
         Args:
             trades: list of trade dicts sorted by created_at_utc asc
             daily_prices: date -> {market_id -> {yes_price, no_price}}
+            flip_sides: swap YES↔NO to simulate the opposite betting direction
         """
         if not trades:
             return []
@@ -368,9 +397,23 @@ class PaperTradingService:
         for date in all_dates:
             # 1. Process trades for this date
             for t in trades_by_date.get(date, []):
-                key = (t["market_id"], t["side"])
+                mid = t["market_id"]
+                original_side = t["side"]
+                effective_side = ("NO" if original_side == "YES" else "YES") if flip_sides else original_side
+                key = (mid, effective_side)
                 qty = float(t["quantity"])
-                price = float(t["price"])
+
+                if flip_sides:
+                    # Use the opposite side's snapshot price on the trade date.
+                    price_field = "yes_price" if effective_side == "YES" else "no_price"
+                    day_snap = daily_prices.get(date, {}).get(mid)
+                    if day_snap:
+                        price = float(day_snap[price_field])
+                    else:
+                        # Fallback: complement of stored price (yes + no ≈ 1)
+                        price = max(0.0, 1.0 - float(t["price"]))
+                else:
+                    price = float(t["price"])
 
                 if t["action"] == "OPEN":
                     open_tracker[key].append((qty, price))
@@ -516,6 +559,167 @@ class PaperTradingService:
                 stats.trend_direction = "none"
 
         return stats
+
+    async def compute_per_market_pnl(self) -> dict[str, float]:
+        """Return {market_id: total_pnl} (realized + mark-to-market unrealized).
+
+        Used as the precomputation step for Monte Carlo sampling.
+        """
+        trades, daily_prices = await self._fetch_equity_data()
+        if not trades:
+            return {}
+        return self._compute_market_pnl_breakdown(trades, daily_prices)
+
+    @staticmethod
+    def _compute_market_pnl_breakdown(
+        trades: list[dict],
+        daily_prices: dict[str, dict[str, dict]],
+    ) -> dict[str, float]:
+        """Same FIFO + mark-to-market replay as equity curve, but aggregated per market_id."""
+        trades_by_date: dict[str, list[dict]] = defaultdict(list)
+        for t in trades:
+            date = t.get("created_at_utc", "")[:10]
+            if date:
+                trades_by_date[date].append(t)
+
+        all_dates = sorted(set(list(trades_by_date.keys()) + list(daily_prices.keys())))
+
+        open_tracker: dict[tuple[str, str], list[tuple[float, float]]] = defaultdict(list)
+        realized_per_market: dict[str, float] = defaultdict(float)
+        last_known_prices: dict[str, dict] = {}
+
+        for date in all_dates:
+            for t in trades_by_date.get(date, []):
+                mid = t["market_id"]
+                key = (mid, t["side"])
+                qty = float(t["quantity"])
+                price = float(t["price"])
+
+                if t["action"] == "OPEN":
+                    open_tracker[key].append((qty, price))
+                elif t["action"] == "CLOSE":
+                    remaining = qty
+                    while remaining > 0 and open_tracker[key]:
+                        open_qty, open_price = open_tracker[key][0]
+                        matched = min(remaining, open_qty)
+                        realized_per_market[mid] += matched * (price - open_price)
+                        remaining -= matched
+                        if matched >= open_qty:
+                            open_tracker[key].pop(0)
+                        else:
+                            open_tracker[key][0] = (open_qty - matched, open_price)
+
+            if date in daily_prices:
+                for mid, prices in daily_prices[date].items():
+                    last_known_prices[mid] = prices
+
+        # Final mark-to-market unrealized per market
+        unrealized_per_market: dict[str, float] = defaultdict(float)
+        for (mid, side), lots in open_tracker.items():
+            total_qty = sum(q for q, _ in lots)
+            if total_qty <= 0:
+                continue
+            prices = last_known_prices.get(mid)
+            if prices:
+                cp = prices["yes_price"] if side == "YES" else prices["no_price"]
+            else:
+                cp = sum(q * p for q, p in lots) / total_qty
+            pv = total_qty * cp
+            cost = sum(q * p for q, p in lots)
+            unrealized_per_market[mid] += pv - cost
+
+        all_mids = set(realized_per_market.keys()) | set(unrealized_per_market.keys())
+        return {
+            mid: round(realized_per_market[mid] + unrealized_per_market[mid], 6)
+            for mid in all_mids
+        }
+
+    async def run_monte_carlo(
+        self,
+        iterations: int = 10000,
+        percentages: list[float] | None = None,
+    ) -> MonteCarloResponse:
+        """Run Monte Carlo simulation: randomly sample X% of markets N times.
+
+        Returns distribution of total portfolio P&L for each percentage,
+        answering: 'What would have happened if only X% of events existed?'
+        """
+        if percentages is None:
+            percentages = [70.0, 80.0, 90.0]
+        market_pnl = await self.compute_per_market_pnl()
+        if not market_pnl:
+            return MonteCarloResponse(results=[], total_markets=0, iterations=iterations)
+        pct_results = self._run_monte_carlo_inner(market_pnl, percentages, iterations)
+        return MonteCarloResponse(
+            results=list(pct_results.values()),
+            total_markets=len(market_pnl),
+            iterations=iterations,
+        )
+
+    @staticmethod
+    def _run_monte_carlo_inner(
+        market_pnl: dict[str, float],
+        percentages: list[float],
+        iterations: int,
+    ) -> dict[float, MonteCarloPercentageResult]:
+        """Pure Python Monte Carlo — no ES calls, runs in milliseconds for 10k iterations."""
+        market_ids = list(market_pnl.keys())
+        n_markets = len(market_ids)
+        samples: dict[float, list[float]] = {p: [] for p in percentages}
+
+        for _ in range(iterations):
+            for pct in percentages:
+                k = max(1, min(n_markets, round(n_markets * pct / 100.0)))
+                chosen = random.sample(market_ids, k)
+                samples[pct].append(sum(market_pnl[m] for m in chosen))
+
+        output: dict[float, MonteCarloPercentageResult] = {}
+        for pct, vals in samples.items():
+            vals_sorted = sorted(vals)
+            n = len(vals_sorted)
+            mean = sum(vals_sorted) / n
+            variance = sum((x - mean) ** 2 for x in vals_sorted) / n
+            std = math.sqrt(variance)
+            prob_positive = sum(1 for x in vals_sorted if x > 0) / n
+
+            def pctile(lst: list[float], p: float) -> float:
+                idx = max(0, min(len(lst) - 1, int(p / 100.0 * len(lst))))
+                return lst[idx]
+
+            lo, hi = vals_sorted[0], vals_sorted[-1]
+            if hi == lo:
+                histogram = [MonteCarloHistogramBin(bin_start=lo, bin_end=hi, count=n)]
+            else:
+                bin_width = (hi - lo) / 20.0
+                counts = [0] * 20
+                for x in vals_sorted:
+                    idx = min(19, int((x - lo) / bin_width))
+                    counts[idx] += 1
+                histogram = [
+                    MonteCarloHistogramBin(
+                        bin_start=round(lo + i * bin_width, 4),
+                        bin_end=round(lo + (i + 1) * bin_width, 4),
+                        count=counts[i],
+                    )
+                    for i in range(20)
+                ]
+
+            output[pct] = MonteCarloPercentageResult(
+                percentage=pct,
+                iterations=n,
+                mean=round(mean, 4),
+                median=round(pctile(vals_sorted, 50), 4),
+                std=round(std, 4),
+                p5=round(pctile(vals_sorted, 5), 4),
+                p25=round(pctile(vals_sorted, 25), 4),
+                p75=round(pctile(vals_sorted, 75), 4),
+                p95=round(pctile(vals_sorted, 95), 4),
+                prob_positive=round(prob_positive, 4),
+                histogram=histogram,
+                markets_sampled=max(1, min(n_markets, round(n_markets * pct / 100.0))),
+                total_markets=n_markets,
+            )
+        return output
 
     async def _compute_realized_pnl(self, trades: list[dict]) -> float:
         """Compute realized P&L from closed trades."""

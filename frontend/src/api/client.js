@@ -40,7 +40,10 @@ export const openTrade = (body) => api.post("/paper_trades/open", body);
 export const closeTrade = (body) => api.post("/paper_trades/close", body);
 export const getPositions = () => api.get("/paper_positions");
 export const getPortfolioSummary = () => api.get("/paper_portfolio/summary");
-export const getEquityCurve = () => api.get("/paper_portfolio/equity_curve");
+export const getEquityCurve = (params = {}) => api.get("/paper_portfolio/equity_curve", { params });
+export const getEquityCurveDual = () => api.get("/paper_portfolio/equity_curve_dual");
+export const getMonteCarlo = (params = {}) =>
+  api.get("/monte_carlo", { params, timeout: 60000 });
 export const getAllTrades = () => api.get("/paper_trades");
 
 // --- Settings ---
