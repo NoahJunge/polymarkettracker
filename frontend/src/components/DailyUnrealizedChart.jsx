@@ -18,14 +18,15 @@ function formatDate(d) {
 export default function DailyUnrealizedChart({ curve }) {
   if (!curve || curve.length === 0) return null;
 
-  const data = curve.map((pt) => ({
+  // Daily change in total P&L (not absolute value) — e.g. going from -$23 to $0 = +$23 today
+  const data = curve.map((pt, i) => ({
     date: pt.date,
-    unrealized: pt.unrealized_pnl,
+    unrealized: i === 0 ? pt.total_pnl : pt.total_pnl - curve[i - 1].total_pnl,
   }));
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 p-4">
-      <h3 className="text-base font-semibold mb-3">Daily Unrealized Return</h3>
+      <h3 className="text-base font-semibold mb-3">Daily P&L Change</h3>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -41,7 +42,7 @@ export default function DailyUnrealizedChart({ curve }) {
           />
           <Tooltip
             labelFormatter={formatDate}
-            formatter={(v) => [`$${v.toFixed(2)}`, "Unrealized P&L"]}
+            formatter={(v) => [`${v >= 0 ? "+" : ""}$${v.toFixed(2)}`, "Daily P&L Change"]}
           />
           <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
           <Bar dataKey="unrealized" name="Unrealized P&L" maxBarSize={16}>
