@@ -25,7 +25,7 @@ export default function DailyUnrealizedChart({ curve }) {
   }));
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
       <h3 className="text-base font-semibold mb-3">Daily P&L Change</h3>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>

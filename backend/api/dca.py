@@ -25,6 +25,12 @@ async def get_dca_trades(request: Request, market_id: str | None = None):
     return await svc.get_dca_trades(market_id=market_id)
 
 
+@router.get("/dca/portfolio/summary")
+async def get_dca_portfolio_summary(request: Request):
+    svc = request.app.state.dca_service
+    return await svc.get_portfolio_summary()
+
+
 @router.get("/dca/{dca_id}/analytics")
 async def get_dca_analytics(request: Request, dca_id: str):
     svc = request.app.state.dca_service

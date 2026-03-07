@@ -13,6 +13,7 @@ import PriceChart from "../components/PriceChart";
 import SnapshotTable from "../components/SnapshotTable";
 import TradeModal from "../components/TradeModal";
 import AlertModal from "../components/AlertModal";
+import { CardSkeleton, ChartSkeleton, TableSkeleton } from "../components/Skeleton";
 
 export default function MarketDetail() {
   const { marketId } = useParams();
@@ -99,7 +100,18 @@ export default function MarketDetail() {
     }
   };
 
-  if (loading) return <p className="text-slate-500">Loading...</p>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+      <ChartSkeleton />
+      <TableSkeleton rows={5} />
+    </div>
+  );
   if (!market) return <p className="text-red-500">Market not found.</p>;
 
   return (
@@ -132,7 +144,7 @@ export default function MarketDetail() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <p className="text-xs text-slate-500">Yes Price</p>
           <p className="text-2xl font-semibold text-green-600">
             {market.yes_price != null
@@ -140,7 +152,7 @@ export default function MarketDetail() {
               : "\u2014"}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <p className="text-xs text-slate-500">No Price</p>
           <p className="text-2xl font-semibold text-red-600">
             {market.no_price != null
@@ -148,13 +160,13 @@ export default function MarketDetail() {
               : "\u2014"}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <p className="text-xs text-slate-500">Volume</p>
           <p className="text-xl font-semibold">
             ${(market.volumeNum || 0).toLocaleString()}
           </p>
         </div>
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <p className="text-xs text-slate-500">Liquidity</p>
           <p className="text-xl font-semibold">
             ${(market.liquidityNum || 0).toLocaleString()}
@@ -164,7 +176,7 @@ export default function MarketDetail() {
 
       {/* Extra info */}
       {(market.end_date || market.description) && (
-        <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-2">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-2">
           {market.end_date && (
             <p className="text-sm text-slate-600">
               <span className="font-medium">End Date:</span>{" "}
@@ -221,7 +233,7 @@ export default function MarketDetail() {
 
       {/* DCA Analytics */}
       {dcaAnalytics && dcaAnalytics.total_trades > 0 && (
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base font-semibold">
               DCA Strategy
@@ -284,13 +296,13 @@ export default function MarketDetail() {
       )}
 
       {/* Price Chart */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <h3 className="text-base font-semibold mb-3">Price History</h3>
         <PriceChart snapshots={snapshots} trades={dcaTrades} />
       </div>
 
       {/* Snapshot Table */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <h3 className="text-base font-semibold mb-3">
           Snapshots ({snapshots.length})
         </h3>

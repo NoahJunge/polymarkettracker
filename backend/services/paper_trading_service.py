@@ -182,6 +182,118 @@ class PaperTradingService:
             total_trades=len(all_trades),
         )
 
+    async def generate_gain_chart(self) -> bytes:
+        """Generate a portfolio performance PNG chart and return the bytes."""
+        import io
+        import matplotlib
+        matplotlib.use("Agg")  # non-interactive backend, safe in async context
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        import matplotlib.patches as mpatches
+        from matplotlib.ticker import FuncFormatter
+        from datetime import datetime as dt
+
+        ec = await self.get_equity_curve()
+        curve = ec.curve
+        if not curve:
+            raise ValueError("No equity curve data available")
+
+        dates    = [dt.strptime(p.date, "%Y-%m-%d") for p in curve]
+        pnl      = [p.total_pnl for p in curve]
+        invested = [p.cumulative_invested for p in curve]
+        value    = [p.portfolio_value for p in curve]
+
+        VIOLET    = "#7c3aed"
+        GREEN     = "#16a34a"
+        RED       = "#dc2626"
+        SLATE_50  = "#f8fafc"
+        SLATE_200 = "#e2e8f0"
+        SLATE_500 = "#64748b"
+        SLATE_900 = "#0f172a"
+
+        plt.rcParams.update({"font.family": "DejaVu Sans", "axes.spines.top": False, "axes.spines.right": False})
+
+        fig = plt.figure(figsize=(13, 7.5), facecolor="white")
+
+        # Title
+        fig.text(0.055, 0.93, "Polymarket Trump Tracker — Portfolio Performance",
+                 fontsize=15, fontweight="bold", color=SLATE_900)
+        fig.text(0.055, 0.895,
+                 f"Paper trading · {dates[0].strftime('%b %d, %Y')} – {dates[-1].strftime('%b %d, %Y')}"
+                 f"  ·  {len(curve)} trading days  ·  {curve[-1].total_open_trades:,} trades placed",
+                 fontsize=9.5, color=SLATE_500)
+        fig.add_artist(plt.Line2D([0.055, 0.95], [0.875, 0.875],
+                       transform=fig.transFigure, color=SLATE_200, linewidth=1))
+
+        # Metric cards
+        final_pnl  = pnl[-1]
+        final_val  = value[-1]
+        final_inv  = invested[-1]
+        pnl_pct    = (final_pnl / final_inv * 100) if final_inv else 0
+        pnl_color  = GREEN if final_pnl >= 0 else RED
+        pnl_sign   = "+" if final_pnl >= 0 else ""
+        pct_sign   = "+" if pnl_pct >= 0 else ""
+
+        cards = [
+            (0.055, "Total Invested",  f"${final_inv:,.2f}",                          SLATE_900),
+            (0.30,  "Portfolio Value", f"${final_val:,.2f}",                           SLATE_900),
+            (0.545, "Total P&L",       f"{pnl_sign}${abs(final_pnl):,.2f}",           pnl_color),
+            (0.75,  "Return",          f"{pct_sign}{pnl_pct:.1f}%",                   pnl_color),
+        ]
+        for x, label, val_str, color in cards:
+            fig.text(x, 0.845, label,   fontsize=8.5, color=SLATE_500)
+            fig.text(x, 0.805, val_str, fontsize=17,  color=color, fontweight="bold")
+
+        # Chart
+        ax = fig.add_axes([0.055, 0.1, 0.895, 0.63])
+        ax.set_facecolor(SLATE_50)
+        ax.patch.set_alpha(0.4)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(SLATE_200)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.tick_params(colors=SLATE_500, labelsize=8.5)
+        ax.grid(axis="y", color=SLATE_200, linewidth=0.7, linestyle="--", alpha=0.8)
+
+        ax.plot(dates, invested, color=SLATE_500, linewidth=1.5, linestyle="--", alpha=0.55, label="Invested")
+        ax.plot(dates, value,    color=VIOLET,    linewidth=2.5, label="Portfolio Value", zorder=3)
+        ax.fill_between(dates, invested, value,
+                        where=[v >= i for v, i in zip(value, invested)],
+                        color=GREEN, alpha=0.12, interpolate=True)
+        ax.fill_between(dates, invested, value,
+                        where=[v < i for v, i in zip(value, invested)],
+                        color=RED, alpha=0.12, interpolate=True)
+
+        ax.axvline(x=dates[-1], color=VIOLET, linewidth=1, linestyle=":", alpha=0.5)
+        ax.annotate(f"Today\n${final_val:,.0f}",
+                    xy=(dates[-1], final_val), xytext=(-55, 18),
+                    textcoords="offset points", fontsize=8, color=VIOLET,
+                    arrowprops=dict(arrowstyle="->", color=VIOLET, lw=1.2))
+
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+        ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}"))
+
+        legend_handles = [
+            plt.Line2D([0], [0], color=VIOLET,    linewidth=2.5, label="Portfolio Value"),
+            plt.Line2D([0], [0], color=SLATE_500, linewidth=1.5, linestyle="--", label="Cumulative Invested"),
+            mpatches.Patch(color=GREEN, alpha=0.3, label="Gain"),
+            mpatches.Patch(color=RED,   alpha=0.3, label="Loss"),
+        ]
+        ax.legend(handles=legend_handles, loc="upper left", fontsize=8.5,
+                  frameon=True, framealpha=0.9, edgecolor=SLATE_200)
+
+        fig.text(0.055, 0.04,
+                 f"Polymarket Trump Tracker · Paper Trading Portfolio · Generated {dt.now().strftime('%B %d, %Y')}",
+                 fontsize=8, color=SLATE_500)
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", dpi=180, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.read()
+
     async def get_all_trades(self) -> list[dict]:
         """Get all paper trades, newest first, enriched with market questions."""
         result = await self.es.search(
@@ -201,6 +313,52 @@ class PaperTradingService:
                 t["question"] = m.get("question", "") if m else ""
 
         return trades
+
+    async def export_to_excel(self) -> bytes:
+        """Export open positions and trade history as an Excel file."""
+        import io
+        import pandas as pd
+
+        positions = await self.get_open_positions()
+        trades = await self.get_all_trades()
+
+        pos_rows = [
+            {
+                "Market": p.question or p.market_id,
+                "Market ID": p.market_id,
+                "Side": p.side,
+                "Quantity": p.net_quantity,
+                "Avg Entry Price": p.avg_entry_price,
+                "Current Price": p.current_price,
+                "Market Value": p.market_value,
+                "Unrealized P&L": p.unrealized_pnl,
+                "Unrealized P&L %": p.unrealized_pnl_pct,
+                "Last Trade Date": p.last_trade_date,
+                "Market Closed": p.closed,
+            }
+            for p in positions
+        ]
+
+        trade_rows = [
+            {
+                "Trade ID": t.get("trade_id", ""),
+                "Market": t.get("question", t.get("market_id", "")),
+                "Market ID": t.get("market_id", ""),
+                "Action": t.get("action", ""),
+                "Side": t.get("side", ""),
+                "Quantity": t.get("quantity", 0),
+                "Price": t.get("price", 0),
+                "Date": t.get("created_at_utc", "")[:10],
+                "DCA": t.get("metadata", {}).get("dca", False),
+            }
+            for t in trades
+        ]
+
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            pd.DataFrame(pos_rows).to_excel(writer, sheet_name="Positions", index=False)
+            pd.DataFrame(trade_rows).to_excel(writer, sheet_name="Trade History", index=False)
+        return buf.getvalue()
 
     async def _nearest_snapshot(
         self, market_id: str, timestamp: datetime | None = None

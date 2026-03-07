@@ -1,6 +1,7 @@
 """Paper trading API endpoints."""
 
 from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi.responses import Response
 
 from models.paper_trade import OpenTradeRequest, CloseTradeRequest
 
@@ -71,6 +72,31 @@ async def get_monte_carlo(
     svc = request.app.state.paper_trading_service
     result = await svc.run_monte_carlo(iterations=iterations)
     return result.model_dump(mode="json")
+
+
+@router.get("/paper_portfolio/chart")
+async def get_portfolio_chart(request: Request):
+    svc = request.app.state.paper_trading_service
+    try:
+        png_bytes = await svc.generate_gain_chart()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Content-Disposition": "attachment; filename=gain_chart.png"},
+    )
+
+
+@router.get("/paper_trades/export")
+async def export_paper_trades(request: Request):
+    svc = request.app.state.paper_trading_service
+    excel_bytes = await svc.export_to_excel()
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=paper_trades.xlsx"},
+    )
 
 
 @router.get("/paper_trades")

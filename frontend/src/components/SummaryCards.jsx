@@ -18,7 +18,7 @@ function formatDate(dateStr) {
   }
 }
 
-export default function SummaryCards({ summary, portfolio }) {
+export default function SummaryCards({ summary, portfolio, dcaSummary }) {
   const navigate = useNavigate();
 
   if (!summary) return null;
@@ -26,11 +26,13 @@ export default function SummaryCards({ summary, portfolio }) {
   const { total_tracked, total_discovered, biggest_movers, closing_soon } =
     summary;
 
+  const showDca = dcaSummary && dcaSummary.active_count > 0;
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div className={`grid grid-cols-1 gap-4 mb-6 ${showDca ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
       {/* Overview Card */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">Overview</h3>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Overview</h3>
         <div className="space-y-2">
           <div className="flex justify-between">
             <span className="text-sm text-slate-600">Tracked Markets</span>
@@ -72,8 +74,8 @@ export default function SummaryCards({ summary, portfolio }) {
       </div>
 
       {/* Biggest Movers Card */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
           Biggest Movers (24h)
         </h3>
         {biggest_movers && biggest_movers.length > 0 ? (
@@ -105,9 +107,40 @@ export default function SummaryCards({ summary, portfolio }) {
         )}
       </div>
 
+      {/* DCA Summary Card */}
+      {showDca && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">DCA Summary</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-sm text-slate-600">Active DCAs</span>
+              <span className="text-sm font-semibold">{dcaSummary.active_count}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-slate-600">Total Invested</span>
+              <span className="text-sm font-semibold">
+                ${(dcaSummary.total_invested || 0).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-slate-600">Unrealized P&L</span>
+              <span
+                className={`text-sm font-semibold ${
+                  (dcaSummary.total_unrealized_pnl || 0) >= 0
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                ${(dcaSummary.total_unrealized_pnl || 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Closing Soon Card */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
           Closing Soon
         </h3>
         {closing_soon && closing_soon.length > 0 ? (

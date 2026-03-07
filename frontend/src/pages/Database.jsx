@@ -274,7 +274,7 @@ export default function Database() {
         <p className="text-slate-500">Loading...</p>
       ) : loaded ? (
         <>
-          <div className="bg-white rounded-lg border border-slate-200 p-4 overflow-x-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-slate-500">

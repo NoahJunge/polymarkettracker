@@ -5,9 +5,11 @@ import {
   getDashboardSummary,
   getPortfolioSummary,
   getPositions,
+  getDCAPortfolioSummary,
 } from "../api/client";
 import MarketTable from "../components/MarketTable";
 import SummaryCards from "../components/SummaryCards";
+import { CardSkeleton, TableSkeleton } from "../components/Skeleton";
 
 const REFRESH_INTERVAL = 60000; // 60 seconds
 
@@ -18,6 +20,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
   const [positions, setPositions] = useState([]);
+  const [dcaSummary, setDcaSummary] = useState(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [sortField, setSortField] = useState("volumeNum");
@@ -40,11 +43,12 @@ export default function Dashboard() {
       if (search) params.search = search;
       if (category) params.category = category;
 
-      const [marketsRes, summaryRes, portfolioRes, positionsRes] = await Promise.all([
+      const [marketsRes, summaryRes, portfolioRes, positionsRes, dcaRes] = await Promise.all([
         getMarkets(params),
         getDashboardSummary(),
         getPortfolioSummary().catch(() => ({ data: null })),
         getPositions().catch(() => ({ data: [] })),
+        getDCAPortfolioSummary().catch(() => ({ data: null })),
       ]);
 
       setMarkets(marketsRes.data.markets);
@@ -52,6 +56,7 @@ export default function Dashboard() {
       setSummary(summaryRes.data);
       setPortfolio(portfolioRes.data);
       setPositions(positionsRes.data || []);
+      setDcaSummary(dcaRes.data);
       setLastUpdated(new Date());
       setSecondsAgo(0);
     } catch (err) {
@@ -140,7 +145,7 @@ export default function Dashboard() {
       </div>
 
       {/* Summary Cards */}
-      <SummaryCards summary={summary} portfolio={portfolio} />
+      <SummaryCards summary={summary} portfolio={portfolio} dcaSummary={dcaSummary} />
 
       {/* Search and Category Filter */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -191,9 +196,16 @@ export default function Dashboard() {
       </div>
 
       {loading && markets.length === 0 ? (
-        <p className="text-slate-500">Loading...</p>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+          <TableSkeleton rows={8} />
+        </>
       ) : (
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <MarketTable
             markets={markets}
             sortField={sortField}

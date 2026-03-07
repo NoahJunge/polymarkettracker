@@ -312,6 +312,31 @@ class DCAService:
         )
         return [h["_source"] for h in result["hits"]["hits"]]
 
+    async def get_portfolio_summary(self) -> dict:
+        """Aggregate DCA analytics across all subscriptions."""
+        subs = await self.get_subscriptions()
+        active_subs = [s for s in subs if s.get("active")]
+        cancelled_count = len(subs) - len(active_subs)
+
+        total_invested = 0.0
+        total_current_value = 0.0
+        total_unrealized_pnl = 0.0
+
+        for sub in active_subs:
+            analytics = await self.get_analytics(sub["dca_id"])
+            if analytics:
+                total_invested += analytics.total_invested
+                total_current_value += analytics.current_value
+                total_unrealized_pnl += analytics.unrealized_pnl
+
+        return {
+            "active_count": len(active_subs),
+            "cancelled_count": cancelled_count,
+            "total_invested": round(total_invested, 4),
+            "total_current_value": round(total_current_value, 4),
+            "total_unrealized_pnl": round(total_unrealized_pnl, 4),
+        }
+
     async def _get_dca_trades_by_id(self, dca_id: str) -> list[dict]:
         """Get all trades for a specific DCA subscription."""
         result = await self.es.search(

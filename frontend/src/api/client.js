@@ -45,6 +45,8 @@ export const getEquityCurveDual = () => api.get("/paper_portfolio/equity_curve_d
 export const getMonteCarlo = (params = {}) =>
   api.get("/monte_carlo", { params, timeout: 60000 });
 export const getAllTrades = () => api.get("/paper_trades");
+export const exportPaperTrades = () => api.get("/paper_trades/export", { responseType: "blob" });
+export const downloadGainChart = () => api.get("/paper_portfolio/chart", { responseType: "blob" });
 
 // --- Settings ---
 export const getSettings = () => api.get("/settings");
@@ -66,6 +68,7 @@ export const getDCAList = (params = {}) => api.get("/dca", { params });
 export const cancelDCA = (dcaId) => api.post(`/dca/${dcaId}/cancel`);
 export const getDCAAnalytics = (dcaId) => api.get(`/dca/${dcaId}/analytics`);
 export const getDCATrades = (params = {}) => api.get("/dca/trades", { params });
+export const getDCAPortfolioSummary = () => api.get("/dca/portfolio/summary");
 
 // --- Alerts ---
 export const getAlerts = (params = {}) => api.get("/alerts", { params });

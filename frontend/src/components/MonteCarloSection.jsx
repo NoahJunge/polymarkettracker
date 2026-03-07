@@ -29,7 +29,7 @@ export default function MonteCarloSection() {
   );
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
       {/* Header row */}
       <div className="flex items-start justify-between mb-4">
         <div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getNewBets, getCategories, setTracking, exportNewBets, exportNewBetsFiltered } from "../api/client";
 import MarketTable from "../components/MarketTable";
+import { TableSkeleton } from "../components/Skeleton";
 
 const PAGE_SIZE = 50;
 
@@ -218,10 +219,10 @@ export default function Discovery() {
       </div>
 
       {loading && markets.length === 0 ? (
-        <p className="text-slate-500">Loading...</p>
+        <TableSkeleton rows={10} />
       ) : (
         <>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
             <MarketTable
               markets={markets}
               showTrackButton

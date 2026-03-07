@@ -29,9 +29,9 @@ export default function PortfolioSummary({ summary }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {cards.map((c) => (
-        <div key={c.label} className="bg-white rounded-lg border border-slate-200 p-4">
-          <p className="text-xs text-slate-500 mb-1">{c.label}</p>
-          <p className={`text-xl font-semibold ${c.color}`}>{c.value}</p>
+        <div key={c.label} className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">{c.label}</p>
+          <p className={`text-2xl font-semibold ${c.color}`}>{c.value}</p>
         </div>
       ))}
     </div>

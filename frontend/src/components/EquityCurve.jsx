@@ -22,7 +22,7 @@ export default function EquityCurve({ curve, stats, antiCurve, antiStats, mode =
 
   if (!activeCurve || activeCurve.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <h3 className="text-base font-semibold mb-2">P&L Equity Curve</h3>
         <p className="text-slate-500 text-sm py-4">
           No trade data available for equity curve.
@@ -60,7 +60,7 @@ export default function EquityCurve({ curve, stats, antiCurve, antiStats, mode =
       : "P&L Equity Curve";
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
       <h3 className="text-base font-semibold mb-3">{title}</h3>
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data}>

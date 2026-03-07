@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getPositions, getPortfolioSummary, getAllTrades, getEquityCurveDual } from "../api/client";
+import { getPositions, getPortfolioSummary, getAllTrades, getEquityCurveDual, exportPaperTrades, downloadGainChart } from "../api/client";
+import { CardSkeleton, ChartSkeleton, TableSkeleton } from "../components/Skeleton";
 import PortfolioSummary from "../components/PortfolioSummary";
 import EquityCurve from "../components/EquityCurve";
 import PortfolioStats from "../components/PortfolioStats";
@@ -26,6 +27,8 @@ export default function PaperTrading() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [tradeSearch, setTradeSearch] = useState("");
   const [showAllTrades, setShowAllTrades] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -121,18 +124,81 @@ export default function PaperTrading() {
     }
   };
 
-  if (loading) return <p className="text-slate-500">Loading...</p>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+      <ChartSkeleton />
+      <TableSkeleton rows={5} />
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Paper Trading</h2>
-        <button
-          onClick={load}
-          className="text-sm px-3 py-1.5 bg-slate-100 text-slate-600 rounded hover:bg-slate-200"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setExporting(true);
+              try {
+                const res = await exportPaperTrades();
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const link = document.createElement("a");
+                link.href = url;
+                link.setAttribute("download", "paper_trades.xlsx");
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+              } catch (err) {
+                console.error("Export failed", err);
+                alert("Export failed.");
+              } finally {
+                setExporting(false);
+              }
+            }}
+            disabled={exporting}
+            className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {exporting ? "Exporting..." : "Export"}
+          </button>
+          <button
+            onClick={async () => {
+              setChartLoading(true);
+              try {
+                const res = await downloadGainChart();
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const link = document.createElement("a");
+                link.href = url;
+                link.setAttribute("download", "gain_chart.png");
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+              } catch (err) {
+                console.error("Chart generation failed", err);
+                alert("Failed to generate chart.");
+              } finally {
+                setChartLoading(false);
+              }
+            }}
+            disabled={chartLoading}
+            className="text-sm px-3 py-1.5 bg-violet-600 text-white rounded hover:bg-violet-700 disabled:opacity-50"
+          >
+            {chartLoading ? "Generating..." : "Gain Chart"}
+          </button>
+          <button
+            onClick={load}
+            className="text-sm px-3 py-1.5 bg-slate-100 text-slate-600 rounded hover:bg-slate-200"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Portfolio Summary */}
@@ -182,7 +248,7 @@ export default function PaperTrading() {
       <MonteCarloSection />
 
       {/* Open Positions */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold">
             Open Positions ({filteredPositions.length}
@@ -321,7 +387,7 @@ export default function PaperTrading() {
       </div>
 
       {/* Trade History */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold">
             Trade History ({filteredTrades.length}

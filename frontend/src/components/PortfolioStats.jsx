@@ -57,7 +57,7 @@ export default function PortfolioStats({ stats }) {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
       <h3 className="text-base font-semibold mb-3">Portfolio Statistics</h3>
 
       {/* Trend banner */}
@@ -83,7 +83,7 @@ export default function PortfolioStats({ stats }) {
         {cards.map((c) => (
           <div
             key={c.label}
-            className="bg-slate-50 rounded-lg p-3 text-center"
+            className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100"
           >
             <p className="text-xs text-slate-500 mb-1">{c.label}</p>
             <p className="text-lg font-semibold text-slate-900">{c.value}</p>

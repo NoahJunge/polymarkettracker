@@ -52,3 +52,4 @@ htmlcov/
 *.xls
 # Exception: seed data for sharing
 !backend/seed_data/seed.xlsx
+charts/
