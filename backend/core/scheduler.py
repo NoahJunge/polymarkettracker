@@ -119,9 +119,9 @@ class SchedulerManager:
             except Exception:
                 pass
 
-    async def run_collector_now(self) -> dict:
+    async def run_collector_now(self, override_time: datetime | None = None) -> dict:
         """Trigger an immediate collector run."""
-        return await self._run_collector()
+        return await self._run_collector(override_time=override_time)
 
     def get_status(self) -> dict:
         """Get scheduler status and job info."""
@@ -151,10 +151,10 @@ class SchedulerManager:
             return {"error": "DCA service not configured"}
         return await self._run_dca()
 
-    async def _run_collector(self) -> dict:
+    async def _run_collector(self, override_time: datetime | None = None) -> dict:
         """Internal: run the collector, then check alerts, then run DCA, then export+push."""
         logger.info("Starting collector run")
-        result = await self.collector_svc.run()
+        result = await self.collector_svc.run(override_time=override_time)
         # Check price alerts after fresh data is collected
         if self.alerts_svc:
             try:

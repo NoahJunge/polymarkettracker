@@ -25,13 +25,13 @@ class CollectorService:
         self.last_run_utc: datetime | None = None
         self.is_running: bool = False
 
-    async def run(self) -> dict:
+    async def run(self, override_time: datetime | None = None) -> dict:
         """Execute a full collection run. Returns stats dict."""
         if self.is_running:
             return {"error": "Collection already in progress"}
 
         self.is_running = True
-        run_start = datetime.now(timezone.utc)
+        run_start = override_time if override_time else datetime.now(timezone.utc)
         stats = {
             "started_utc": run_start.isoformat(),
             "discovered": 0,

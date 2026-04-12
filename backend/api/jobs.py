@@ -1,14 +1,25 @@
 """Collector and DCA job control API endpoints."""
 
-from fastapi import APIRouter, Request
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Query, Request
 
 router = APIRouter()
 
 
 @router.post("/jobs/collect")
-async def run_collector(request: Request):
+async def run_collector(
+    request: Request,
+    timestamp: Optional[str] = Query(None, description="Override snapshot timestamp (ISO 8601, e.g. 2026-03-24T12:00:00Z)"),
+):
+    override_time = None
+    if timestamp:
+        override_time = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if override_time.tzinfo is None:
+            override_time = override_time.replace(tzinfo=timezone.utc)
     scheduler = request.app.state.scheduler
-    stats = await scheduler.run_collector_now()
+    stats = await scheduler.run_collector_now(override_time=override_time)
     return stats
 
 
