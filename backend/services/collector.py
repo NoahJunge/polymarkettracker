@@ -1,5 +1,6 @@
 """Collector service — discovers Trump markets and collects snapshots."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -225,74 +226,78 @@ class CollectorService:
     async def _collect_snapshots(
         self, tracked_ids: list[str], run_time: datetime
     ) -> tuple[int, list[str]]:
-        """Fetch fresh prices for tracked markets and create snapshot docs."""
+        """Fetch fresh prices for tracked markets concurrently and create snapshot docs."""
+        import json
         snapshots = []
         errors = []
         ts_iso = run_time.isoformat()
+        semaphore = asyncio.Semaphore(20)  # max 20 concurrent requests
 
-        for mid in tracked_ids:
-            try:
-                market_data = await self.gamma.get_market(mid)
-                if not market_data:
-                    errors.append(f"Market {mid} not found")
-                    continue
+        async def fetch_one(mid: str) -> dict | None:
+            async with semaphore:
+                try:
+                    market_data = await self.gamma.get_market(mid)
+                    if not market_data:
+                        errors.append(f"Market {mid} not found")
+                        return None
 
-                outcomes = market_data.get("outcomes", [])
-                if isinstance(outcomes, str):
-                    import json
-                    try:
-                        outcomes = json.loads(outcomes)
-                    except (json.JSONDecodeError, TypeError):
-                        outcomes = []
+                    outcomes = market_data.get("outcomes", [])
+                    if isinstance(outcomes, str):
+                        try:
+                            outcomes = json.loads(outcomes)
+                        except (json.JSONDecodeError, TypeError):
+                            outcomes = []
 
-                outcome_prices = market_data.get("outcomePrices", [])
-                if isinstance(outcome_prices, str):
-                    import json
-                    try:
-                        outcome_prices = json.loads(outcome_prices)
-                    except (json.JSONDecodeError, TypeError):
-                        outcome_prices = []
+                    outcome_prices = market_data.get("outcomePrices", [])
+                    if isinstance(outcome_prices, str):
+                        try:
+                            outcome_prices = json.loads(outcome_prices)
+                        except (json.JSONDecodeError, TypeError):
+                            outcome_prices = []
 
-                if not outcomes or not outcome_prices or len(outcomes) < 2 or len(outcome_prices) < 2:
-                    errors.append(f"Market {mid}: invalid outcomes/prices")
-                    continue
+                    if not outcomes or not outcome_prices or len(outcomes) < 2 or len(outcome_prices) < 2:
+                        errors.append(f"Market {mid}: invalid outcomes/prices")
+                        return None
 
-                # Detect newly-closed markets and update status
-                if market_data.get("closed"):
-                    try:
-                        await self.es.update(MARKETS_INDEX, mid, {
-                            "closed": True,
-                            "active": market_data.get("active", True),
-                        })
-                    except Exception:
-                        pass  # Market may not exist in index yet
-                    logger.info("Market %s is now closed, skipping snapshot", mid)
-                    continue
+                    # Detect newly-closed markets and update status
+                    if market_data.get("closed"):
+                        try:
+                            await self.es.update(MARKETS_INDEX, mid, {
+                                "closed": True,
+                                "active": market_data.get("active", True),
+                            })
+                        except Exception:
+                            pass
+                        logger.info("Market %s is now closed, skipping snapshot", mid)
+                        return None
 
-                yes_price, no_price = normalize_yes_no_prices(outcomes, outcome_prices)
-                doc_id = generate_snapshot_doc_id(run_time, mid)
+                    yes_price, no_price = normalize_yes_no_prices(outcomes, outcome_prices)
+                    doc_id = generate_snapshot_doc_id(run_time, mid)
 
-                snapshot = {
-                    "_id": doc_id,
-                    "timestamp_utc": ts_iso,
-                    "market_id": mid,
-                    "question": market_data.get("question", ""),
-                    "yes_price": round(yes_price, 6),
-                    "no_price": round(no_price, 6),
-                    "yes_cents": round(yes_price * 100),
-                    "no_cents": round(no_price * 100),
-                    "spread": round(abs(yes_price - no_price), 6),
-                    "volumeNum": float(market_data.get("volumeNum", 0) or 0),
-                    "liquidityNum": float(market_data.get("liquidityNum", 0) or 0),
-                    "active": market_data.get("active", True),
-                    "closed": market_data.get("closed", False),
-                    "market_slug": market_data.get("slug", ""),
-                }
-                snapshots.append(snapshot)
+                    return {
+                        "_id": doc_id,
+                        "timestamp_utc": ts_iso,
+                        "market_id": mid,
+                        "question": market_data.get("question", ""),
+                        "yes_price": round(yes_price, 6),
+                        "no_price": round(no_price, 6),
+                        "yes_cents": round(yes_price * 100),
+                        "no_cents": round(no_price * 100),
+                        "spread": round(abs(yes_price - no_price), 6),
+                        "volumeNum": float(market_data.get("volumeNum", 0) or 0),
+                        "liquidityNum": float(market_data.get("liquidityNum", 0) or 0),
+                        "active": market_data.get("active", True),
+                        "closed": market_data.get("closed", False),
+                        "market_slug": market_data.get("slug", ""),
+                    }
 
-            except Exception as e:
-                logger.error("Error collecting snapshot for %s: %s", mid, e)
-                errors.append(f"Market {mid}: {e}")
+                except Exception as e:
+                    logger.error("Error collecting snapshot for %s: %s", mid, e)
+                    errors.append(f"Market {mid}: {e}")
+                    return None
+
+        results = await asyncio.gather(*[fetch_one(mid) for mid in tracked_ids])
+        snapshots = [r for r in results if r is not None]
 
         if snapshots:
             result = await self.es.bulk_index(SNAPSHOTS_INDEX, snapshots)
