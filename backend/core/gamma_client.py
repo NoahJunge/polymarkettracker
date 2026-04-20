@@ -1,5 +1,6 @@
 """Polymarket Gamma API client with pagination and retry logic."""
 
+import asyncio
 import logging
 
 import httpx
@@ -9,18 +10,28 @@ from utils.retry import retry_with_backoff
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://gamma-api.polymarket.com"
+# Hard asyncio-level deadline per request, independent of httpx timeout.
+# Guards against TCP-level stalls where the connection appears alive but
+# no data flows and httpx's own timeout never fires.
+_REQUEST_DEADLINE = 45  # seconds
 
 
 class GammaClient:
     def __init__(self, timeout: int = 30):
-        self._client = httpx.AsyncClient(base_url=BASE_URL, timeout=timeout)
+        self._client = httpx.AsyncClient(
+            base_url=BASE_URL,
+            timeout=httpx.Timeout(connect=10, read=30, write=10, pool=10),
+        )
 
     async def close(self):
         await self._client.aclose()
 
     @retry_with_backoff(max_attempts=3, base_delay=1.0)
     async def _get(self, path: str, params: dict | None = None) -> dict | list:
-        resp = await self._client.get(path, params=params)
+        resp = await asyncio.wait_for(
+            self._client.get(path, params=params),
+            timeout=_REQUEST_DEADLINE,
+        )
         resp.raise_for_status()
         return resp.json()
 
