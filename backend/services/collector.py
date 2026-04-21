@@ -169,9 +169,13 @@ class CollectorService:
     async def _upsert_markets(self, markets: list[dict], run_time: datetime):
         """Bulk upsert market metadata. Set first_seen_utc if new, always update last_seen_utc."""
         now_iso = run_time.isoformat()
+        all_ids = [m["market_id"] for m in markets]
+
+        # Single batch fetch instead of N sequential GETs
+        existing_map = await self.es.mget(MARKETS_INDEX, all_ids)
 
         for m in markets:
-            existing = await self.es.get(MARKETS_INDEX, m["market_id"])
+            existing = existing_map.get(m["market_id"])
             if existing:
                 m["first_seen_utc"] = existing.get("first_seen_utc", now_iso)
             else:
