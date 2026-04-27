@@ -381,14 +381,30 @@ class PaperTradingService:
         return hits[0]["_source"] if hits else None
 
     async def _get_all_trades(self) -> list[dict]:
-        """Get all trades from ES."""
-        result = await self.es.search(
-            PAPER_TRADES_INDEX,
-            query={"match_all": {}},
-            sort=[{"created_at_utc": {"order": "asc"}}],
-            size=10000,
-        )
-        return [hit["_source"] for hit in result["hits"]["hits"]]
+        """Get all trades from ES using search_after pagination to bypass the 10k limit."""
+        all_trades = []
+        page_size = 5000
+        search_after = None
+
+        while True:
+            body: dict = {
+                "query": {"match_all": {}},
+                "sort": [{"created_at_utc": {"order": "asc"}}, {"trade_id": {"order": "asc"}}],
+                "size": page_size,
+            }
+            if search_after:
+                body["search_after"] = search_after
+
+            result = await self.es.client.search(index=PAPER_TRADES_INDEX, body=body)
+            hits = result["hits"]["hits"]
+            if not hits:
+                break
+            all_trades.extend(hit["_source"] for hit in hits)
+            if len(hits) < page_size:
+                break
+            search_after = hits[-1]["sort"]
+
+        return all_trades
 
     async def _aggregate_positions(self) -> dict[tuple[str, str], dict]:
         """Aggregate trades into net positions per (market_id, side)."""
