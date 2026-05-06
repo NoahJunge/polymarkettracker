@@ -20,6 +20,7 @@ from services.paper_trading_service import PaperTradingService
 from services.export_service import ExportService
 from services.alerts_service import AlertsService
 from services.dca_service import DCAService
+from services.clob_history_service import ClobHistoryService
 from api.router import api_router
 
 logging.basicConfig(
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI):
     export_svc = ExportService(es, config.EXPORT_DIR)
     alerts_svc = AlertsService(es)
     dca_svc = DCAService(es)
+    clob_history_svc = ClobHistoryService(es)
 
     # Scheduler
     scheduler = SchedulerManager(es, settings_svc, collector_svc, export_svc, alerts_svc, dca_svc)
@@ -93,6 +95,7 @@ async def lifespan(app: FastAPI):
     app.state.export_service = export_svc
     app.state.alerts_service = alerts_svc
     app.state.dca_service = dca_svc
+    app.state.clob_history_service = clob_history_svc
     app.state.scheduler = scheduler
 
     logger.info("Backend ready")
@@ -103,6 +106,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down")
     await scheduler.shutdown()
     await gamma.close()
+    await clob_history_svc.close()
     await es.close()
 
 

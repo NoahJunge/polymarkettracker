@@ -10,6 +10,7 @@ from api.settings import router as settings_router
 from api.alerts import router as alerts_router
 from api.database import router as database_router
 from api.dca import router as dca_router
+from api.analysis import router as analysis_router
 
 api_router = APIRouter(prefix="/api")
 
@@ -21,3 +22,4 @@ api_router.include_router(settings_router, tags=["Settings"])
 api_router.include_router(alerts_router, tags=["Alerts"])
 api_router.include_router(database_router, tags=["Database"])
 api_router.include_router(dca_router, tags=["DCA"])
+api_router.include_router(analysis_router, tags=["Analysis"])

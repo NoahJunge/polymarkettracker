@@ -6,6 +6,7 @@ import Discovery from "./pages/Discovery";
 import PaperTrading from "./pages/PaperTrading";
 import Database from "./pages/Database";
 import Settings from "./pages/Settings";
+import Analysis from "./pages/Analysis";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/discovery" element={<Discovery />} />
         <Route path="/paper-trading" element={<PaperTrading />} />
         <Route path="/database" element={<Database />} />
+        <Route path="/analysis" element={<Analysis />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

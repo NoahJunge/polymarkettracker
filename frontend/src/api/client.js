@@ -70,6 +70,12 @@ export const getDCAAnalytics = (dcaId) => api.get(`/dca/${dcaId}/analytics`);
 export const getDCATrades = (params = {}) => api.get("/dca/trades", { params });
 export const getDCAPortfolioSummary = () => api.get("/dca/portfolio/summary");
 
+// --- Analysis ---
+export const getAnalysisStatus  = () => api.get("/analysis/status");
+export const getAnalysisMetrics = () => api.get("/analysis/metrics");
+export const runAnalysis        = () => api.post("/jobs/analysis", {}, { timeout: 330000 });
+export const getAnalysisFigureUrl = (filename) => `${API_BASE}/api/analysis/figures/${filename}`;
+
 // --- Alerts ---
 export const getAlerts = (params = {}) => api.get("/alerts", { params });
 export const getTriggeredAlerts = () => api.get("/alerts/triggered");

@@ -25,6 +25,7 @@ MARKETS_MAPPING = {
             "no_price": {"type": "double"},
             "first_seen_utc": {"type": "date"},
             "last_seen_utc": {"type": "date"},
+            "clob_token_ids": {"type": "keyword"},
         }
     },
 }
@@ -48,6 +49,7 @@ SNAPSHOTS_WIDE_MAPPING = {
             "active": {"type": "boolean"},
             "closed": {"type": "boolean"},
             "market_slug": {"type": "keyword"},
+            "source": {"type": "keyword"},
         }
     },
 }

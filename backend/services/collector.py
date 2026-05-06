@@ -130,6 +130,14 @@ class CollectorService:
                     # Extract yes/no prices from discovery data
                     yes_price, no_price = normalize_yes_no_prices(outcomes, outcome_prices)
 
+                    # Extract CLOB token IDs
+                    import json as _json
+                    clob_raw = market.get("clobTokenIds", "[]") or "[]"
+                    try:
+                        clob_token_ids = _json.loads(clob_raw) if isinstance(clob_raw, str) else list(clob_raw)
+                    except (ValueError, TypeError):
+                        clob_token_ids = []
+
                     # Build canonical market dict
                     slug = market.get("slug", "") or market.get("market_slug", "")
                     # End date: prefer market-level, fallback to event-level
@@ -151,6 +159,7 @@ class CollectorService:
                         "one_day_price_change": float(market.get("oneDayPriceChange", 0) or 0),
                         "yes_price": round(yes_price, 6) if yes_price else None,
                         "no_price": round(no_price, 6) if no_price else None,
+                        "clob_token_ids": clob_token_ids,
                     }
 
                     if mid not in all_markets:

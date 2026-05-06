@@ -34,3 +34,33 @@ async def run_dca(request: Request):
 async def get_job_status(request: Request):
     scheduler = request.app.state.scheduler
     return scheduler.get_status()
+
+
+@router.post("/jobs/analysis")
+async def run_analysis(request: Request):
+    import subprocess, sys
+    try:
+        proc = subprocess.run(
+            [sys.executable, "analysis/run_analysis.py"],
+            capture_output=True, text=True, timeout=300,
+            cwd="/app",
+        )
+        return {
+            "status":       "completed" if proc.returncode == 0 else "failed",
+            "returncode":   proc.returncode,
+            "stdout_tail":  proc.stdout[-3000:] if proc.stdout else "",
+            "stderr_tail":  proc.stderr[-1000:] if proc.stderr else "",
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "error": "Analysis took longer than 5 minutes"}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@router.post("/jobs/clob-backfill")
+async def run_clob_backfill(
+    request: Request,
+    start_ts: Optional[int] = Query(None, description="Unix timestamp floor for CLOB history fetch (default: 2024-01-01)"),
+):
+    svc = request.app.state.clob_history_service
+    return await svc.run_backfill(start_ts=start_ts)

@@ -22,6 +22,7 @@ class Market(BaseModel):
     one_day_price_change: float = 0.0
     first_seen_utc: datetime | None = None
     last_seen_utc: datetime | None = None
+    clob_token_ids: list[str] = Field(default_factory=list)
 
 
 class SnapshotWide(BaseModel):

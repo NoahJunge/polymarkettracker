@@ -337,6 +337,59 @@ class DCAService:
             "total_unrealized_pnl": round(total_unrealized_pnl, 4),
         }
 
+    async def _delete_dca_trades(self, dca_id: str) -> None:
+        """Delete all paper_trades for a given dca_id."""
+        await self.es.client.delete_by_query(
+            index=PAPER_TRADES_INDEX,
+            body={
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"metadata.dca": True}},
+                            {"term": {"metadata.dca_id": dca_id}},
+                        ]
+                    }
+                }
+            },
+            refresh=True,
+        )
+
+    async def rebackfill_subscription(self, dca_id: str) -> dict:
+        """Delete existing trades and re-run backfill from current snapshots."""
+        sub = await self.es.get(DCA_INDEX, dca_id)
+        if not sub:
+            return {"error": "subscription not found"}
+
+        await self.es.client.indices.refresh(index=SNAPSHOTS_INDEX)
+        await self._delete_dca_trades(dca_id)
+        count = await self._backfill(dca_id, sub["market_id"], sub["side"], sub["quantity"])
+        return {"dca_id": dca_id, "trades_backfilled": count}
+
+    async def rebackfill_all(self) -> dict:
+        """Delete and regenerate trades for all active subscriptions."""
+        await self.es.client.indices.refresh(index=SNAPSHOTS_INDEX)
+
+        result = await self.es.search(
+            DCA_INDEX,
+            query={"term": {"active": True}},
+            size=10000,
+        )
+        subs = [h["_source"] for h in result["hits"]["hits"]]
+
+        rebackfilled = 0
+        errors = []
+        for sub in subs:
+            dca_id = sub["dca_id"]
+            try:
+                await self._delete_dca_trades(dca_id)
+                await self._backfill(dca_id, sub["market_id"], sub["side"], sub["quantity"])
+                rebackfilled += 1
+            except Exception as e:
+                errors.append(f"{dca_id}: {e}")
+                logger.warning("rebackfill_all failed for %s: %s", dca_id, e)
+
+        return {"subscriptions_rebackfilled": rebackfilled, "errors": errors}
+
     async def _get_dca_trades_by_id(self, dca_id: str) -> list[dict]:
         """Get all trades for a specific DCA subscription."""
         result = await self.es.search(

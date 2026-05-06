@@ -47,3 +47,15 @@ async def cancel_dca(request: Request, dca_id: str):
     if not ok:
         raise HTTPException(400, "Failed to cancel DCA subscription")
     return {"status": "cancelled", "dca_id": dca_id}
+
+
+@router.post("/dca/{dca_id}/rebackfill")
+async def rebackfill_dca(request: Request, dca_id: str):
+    svc = request.app.state.dca_service
+    return await svc.rebackfill_subscription(dca_id)
+
+
+@router.post("/dca/rebackfill-all")
+async def rebackfill_all_dca(request: Request):
+    svc = request.app.state.dca_service
+    return await svc.rebackfill_all()
