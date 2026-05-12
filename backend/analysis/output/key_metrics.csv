@@ -1,0 +1,17 @@
+metric,value
+label,CLEAN SERIES
+T,75
+mean_daily_return,-0.000565
+std_daily_return,0.020118
+ann_return,-0.206312
+sharpe_ann,-0.536785
+sortino_ann,-0.493748
+max_dd_usd,-477.6335
+max_dd_pct,-6.996011
+calmar,-2.949002
+var_95,0.026127
+cvar_95,0.051241
+final_pnl,-304.4235
+total_invested,9691.599
+return_on_invested,-3.141107
+mc_pct_rank,0.46

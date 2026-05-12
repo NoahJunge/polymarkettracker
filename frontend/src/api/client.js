@@ -74,6 +74,8 @@ export const getDCAPortfolioSummary = () => api.get("/dca/portfolio/summary");
 export const getAnalysisStatus  = () => api.get("/analysis/status");
 export const getAnalysisMetrics = () => api.get("/analysis/metrics");
 export const runAnalysis        = () => api.post("/jobs/analysis", {}, { timeout: 330000 });
+export const runMonteCarlo      = (nSims, seed = 42) =>
+  api.post("/analysis/monte-carlo", { n_sims: nSims, seed }, { timeout: 120000 });
 export const getAnalysisFigureUrl = (filename) => `${API_BASE}/api/analysis/figures/${filename}`;
 
 // --- Alerts ---

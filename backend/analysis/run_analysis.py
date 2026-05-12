@@ -66,7 +66,6 @@ ALPHA              = 0.05           # significance level
 
 # Thesis colour palette
 C_PRO    = "#7c3aed"   # violet  — pro-Trump strategy
-C_ANTI   = "#d97706"   # amber   — anti-Trump counterfactual
 C_GAIN   = "#16a34a"   # green
 C_LOSS   = "#dc2626"   # red
 C_INV    = "#3b82f6"   # blue    — invested capital
@@ -283,6 +282,134 @@ def build_equity_curve(dca, price_lookup, flip_sides=False):
     return df
 
 
+# ── PER-MARKET P&L MATRICES (for Monte Carlo) ────────────────────────────────
+
+def build_per_market_pnl_curves(dca, price_lookup):
+    """
+    Decompose portfolio P&L into per-market YES/NO contributions.
+    Returns matrices needed for the vectorized Monte Carlo simulation.
+    """
+    opens = dca[dca["action"] == "OPEN"].sort_values("date").copy()
+
+    all_dates = sorted(set(k[1] for k in price_lookup))
+    if not all_dates or len(opens) == 0:
+        return [], [], np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0, 0)), np.zeros((0, 0))
+
+    date_range = list(pd.date_range(opens["date"].min(), all_dates[-1], freq="D").date)
+    T = len(date_range)
+
+    markets = sorted(opens["market_id"].unique())
+    M = len(markets)
+    mkt_idx = {m: i for i, m in enumerate(markets)}
+
+    # Pre-index price_lookup by date for O(1) daily lookups
+    dates_to_prices = {}
+    for (mid, d), prices in price_lookup.items():
+        if mid in mkt_idx:
+            dates_to_prices.setdefault(d, []).append((mid, prices))
+
+    yes_total_qty  = np.zeros(M)
+    no_total_qty   = np.zeros(M)
+    yes_total_cost = np.zeros(M)
+    no_total_cost  = np.zeros(M)
+
+    yes_pnl  = np.zeros((M, T))
+    no_pnl   = np.zeros((M, T))
+    yes_cost = np.zeros((M, T))
+    no_cost  = np.zeros((M, T))
+
+    last_yes = np.full(M, np.nan)
+    last_no  = np.full(M, np.nan)
+
+    opens_by_date = opens.groupby("date")
+
+    for t, d in enumerate(date_range):
+        # Update last known prices for this date
+        for mid, p in dates_to_prices.get(d, []):
+            mi = mkt_idx[mid]
+            yp = p.get("yes_price", np.nan)
+            np_ = p.get("no_price", np.nan)
+            if not np.isnan(yp):
+                last_yes[mi] = yp
+            if not np.isnan(np_):
+                last_no[mi] = np_
+
+        # New DCA trades on this date — add to both YES and NO lot trackers
+        if d in opens_by_date.groups:
+            for row in opens_by_date.get_group(d).itertuples(index=False):
+                mid = row.market_id
+                if mid not in mkt_idx:
+                    continue
+                mi = mkt_idx[mid]
+                snap = price_lookup.get((mid, d))
+                yp  = (snap["yes_price"] if snap and not np.isnan(snap.get("yes_price", np.nan))
+                       else (last_yes[mi] if not np.isnan(last_yes[mi]) else row.price))
+                np_ = (snap["no_price"]  if snap and not np.isnan(snap.get("no_price", np.nan))
+                       else (last_no[mi]  if not np.isnan(last_no[mi])  else 1.0 - row.price))
+                yes_total_qty[mi]  += row.quantity
+                no_total_qty[mi]   += row.quantity
+                yes_total_cost[mi] += row.quantity * yp
+                no_total_cost[mi]  += row.quantity * np_
+
+        # Vectorized mark-to-market
+        yes_pnl[:, t]  = np.where(~np.isnan(last_yes),
+                                   yes_total_qty * last_yes - yes_total_cost, 0.0)
+        no_pnl[:, t]   = np.where(~np.isnan(last_no),
+                                   no_total_qty  * last_no  - no_total_cost,  0.0)
+        yes_cost[:, t] = yes_total_cost
+        no_cost[:, t]  = no_total_cost
+
+    return markets, date_range, yes_pnl, no_pnl, yes_cost, no_cost
+
+
+def build_neutral_mc(yes_pnl, no_pnl, yes_cost, no_cost, n_sims=10_000, seed=42):
+    """
+    Vectorized 50/50 random-direction Monte Carlo.
+
+    For each simulation, each market is independently assigned YES or NO with equal
+    probability. Entry prices, costs, and daily returns are computed from the
+    pre-built per-market matrices.
+
+    Returns:
+        dr_sims          : (n_sims, T-1) daily returns per simulation
+        mean_return_sims : (n_sims,) mean daily return per simulation
+        pnl_sims         : (n_sims, T) cumulative P&L per simulation
+    """
+    M, T = yes_pnl.shape
+    rng = np.random.default_rng(seed)
+    D = rng.integers(0, 2, size=(n_sims, M))  # 0=YES, 1=NO per market
+
+    delta_pnl  = no_pnl  - yes_pnl    # (M, T)
+    delta_cost = no_cost - yes_cost    # (M, T)
+    base_pnl   = yes_pnl.sum(axis=0)  # (T,) all-YES portfolio P&L
+    base_cost  = yes_cost.sum(axis=0) # (T,) all-YES total cost
+
+    pnl_sims  = D.astype(np.float32) @ delta_pnl.astype(np.float32)  + base_pnl   # (n_sims, T)
+    cost_sims = D.astype(np.float32) @ delta_cost.astype(np.float32) + base_cost  # (n_sims, T)
+
+    dpnl      = np.diff(pnl_sims,  axis=1)   # (n_sims, T-1)
+    cost_prev = cost_sims[:, :-1]             # (n_sims, T-1)
+    dr_sims   = np.where(cost_prev > 1.0, dpnl / cost_prev, np.nan).astype(np.float64)
+
+    mean_return_sims = np.nanmean(dr_sims, axis=1)
+
+    return dr_sims, mean_return_sims, pnl_sims.astype(np.float64)
+
+
+def compute_abnormal_returns(curve, dr_sims):
+    """
+    AR_t = R_actual_t - mean(R_neutral_t across all simulations).
+
+    Aligns by taking the last T_actual daily returns from the MC matrix
+    (the MC covers the full period; the curve may start later or have leading NaNs).
+    """
+    r_actual = curve["daily_return"].dropna().values
+    T_actual = len(r_actual)
+    r_neutral_mean = np.nanmean(dr_sims, axis=0)[-T_actual:]
+    ar_series = r_actual - r_neutral_mean
+    return ar_series, r_actual, r_neutral_mean
+
+
 # ── PER-MARKET P&L ────────────────────────────────────────────────────────────
 def compute_per_market_pnl(dca, price_lookup, snaps):
     """Unrealised P&L per market using latest available snapshot price."""
@@ -408,137 +535,150 @@ def print_portfolio_overview(curve, mkt_pnl):
 """)
 
 
-def print_hypothesis_tests(curve_clean, curve_full):
+def print_hypothesis_tests(curve_clean, curve_full,
+                            ar_series, r_protrump, dr_sims,
+                            mean_return_sims, pct_rank_mc):
     section("SECTION 2 — HYPOTHESIS TESTING")
-    print("""
-  We test whether the mean daily return of the pro-Trump DCA strategy
-  differs significantly from zero.
+    print(f"""
+  We test whether the pro-Trump DCA strategy yields ABNORMAL RETURNS relative
+  to a direction-neutral benchmark — isolating the political signal from general
+  market friction (spreads, noise, liquidity effects).
 
-  H₀ : μ = 0  (no abnormal returns — consistent with the Efficient Market
-                Hypothesis: prices already reflect true probabilities)
-  H₁a: μ > 0  (persistent positive returns — market systematically
-                undervalues pro-Trump outcomes)
-  H₁b: μ < 0  (persistent negative returns — market systematically
-                overvalues pro-Trump outcomes, driven by ideologically
-                motivated buyers inflating YES prices)
+  BENCHMARK: {len(mean_return_sims):,} Monte Carlo simulations of a 50/50 neutral strategy
+  that places identical trades (same markets, dates, quantities) but randomly
+  assigns YES or NO to each market with equal probability. This controls for
+  everything except the political direction of the actual pro-Trump strategy.
 
-  Primary dataset: CLEAN SERIES (from 2026-02-22) — continuous daily
-  coverage across a stable set of ~200 markets.
-  Robustness check: FULL SERIES (from 2026-01-26, including sparse early data).
+  ABNORMAL RETURN: AR_t = R_proTrump_t − mean(R_neutral_t across simulations)
+
+  H₀ : E[AR] = 0  (pro-Trump = neutral; no directional political signal)
+  H₁a: E[AR] > 0  (pro-Trump outperforms neutral — market undervalues pro-Trump)
+  H₁b: E[AR] < 0  (pro-Trump underperforms neutral — market overvalues pro-Trump,
+                    consistent with crypto-bro buying inflating pro-Trump prices)
+
+  Source: Brown & Warner (1985); MacKinlay (1997) — event-study framework
 """)
 
-    for curve, label in [(curve_clean, "CLEAN SERIES (primary)"),
-                          (curve_full,  "FULL SERIES (robustness)")]:
-        r = curve["daily_return"].dropna().values
-        T = len(r)
-        subsection(f"2a — One-Sample t-Test  [{label}]")
-        print(f"""  Method: scipy.stats.ttest_1samp
-  Source: Student (1908); Brown & Warner (1985)
-  Assumption check: Normality is not strictly required for T≥30 due to the
-  Central Limit Theorem; serial independence verified via Ljung-Box (Section 0).
+    # 2a — Neutral benchmark summary
+    subsection("2a — Neutral Benchmark Monte Carlo")
+    mc_mean = float(mean_return_sims.mean())
+    mc_std  = float(mean_return_sims.std())
+    mc_p5   = float(np.percentile(mean_return_sims, 5))
+    mc_p95  = float(np.percentile(mean_return_sims, 95))
+    print(f"  Simulations        : {len(mean_return_sims):,}")
+    print(f"  MC mean daily r    : {pct(mc_mean)}  (≈0 confirms neutrality)")
+    print(f"  MC std             : {pct(mc_std)}")
+    print(f"  MC 5th–95th pct    : [{pct(mc_p5)},  {pct(mc_p95)}]")
+    print(f"\n  Pro-Trump mean r   : {pct(r_protrump.mean())}")
+    print(f"  Percentile rank    : {pct_rank_mc:.1f}th  "
+          f"(fraction of neutral sims with lower mean return)")
+    if pct_rank_mc <= 5:
+        print(f"  → Bottom 5% of neutral sims — strong evidence of systematic underperformance.")
+    elif pct_rank_mc >= 95:
+        print(f"  → Top 5% of neutral sims — strong evidence of systematic outperformance.")
+    else:
+        print(f"  → Within typical neutral-benchmark range (no strong directional signal).")
 
-  H₀: μ = 0  vs  H₁: μ ≠ 0  (two-tailed, α = {ALPHA})
-""")
-        t_stat, p_val = stats.ttest_1samp(r, popmean=0)
-        se   = r.std(ddof=1) / np.sqrt(T)
-        ci_lo = r.mean() - 1.96 * se
-        ci_hi = r.mean() + 1.96 * se
+    # 2b — t-test on Abnormal Returns (PRIMARY)
+    subsection("2b — t-Test on Abnormal Returns  [PRIMARY TEST]")
+    print(f"  H₀: E[AR] = 0   H₁: E[AR] ≠ 0   (two-tailed, α = {ALPHA})\n")
+    T_ar = len(ar_series)
+    t_stat, p_val = stats.ttest_1samp(ar_series, popmean=0)
+    se    = ar_series.std(ddof=1) / np.sqrt(T_ar)
+    ci_lo = ar_series.mean() - 1.96 * se
+    ci_hi = ar_series.mean() + 1.96 * se
 
-        print(f"  N (trading days)  : {T}")
-        print(f"  Mean daily return : {pct(r.mean())}  ({usd(r.mean())} per $1 invested)")
-        print(f"  Std deviation     : {pct(r.std(ddof=1))}")
-        print(f"  t-statistic       : {t_stat:.4f}")
-        print(f"  Degrees of freedom: {T - 1}")
-        print(f"  {fmt_p(p_val)}  {significance_stars(p_val)}")
-        print(f"  95% CI            : [{pct(ci_lo)},  {pct(ci_hi)}]")
-
-        if p_val < ALPHA:
-            direction = "POSITIVE (H₁a)" if r.mean() > 0 else "NEGATIVE (H₁b)"
-            print(f"\n  ✓ REJECT H₀ at α={ALPHA}  →  Evidence for {direction} abnormal returns.")
-            if r.mean() < 0:
-                print("    Interpretation: The strategy yields persistent losses, suggesting")
-                print("    pro-Trump outcomes are systematically OVERVALUED on Polymarket.")
-                print("    This is consistent with H₁b: ideologically motivated buyers")
-                print("    inflate YES (pro-Trump) prices above their true probability.")
-            else:
-                print("    Interpretation: The strategy yields persistent gains, suggesting")
-                print("    pro-Trump outcomes are systematically UNDERVALUED on Polymarket.")
+    print(f"  N (days)           : {T_ar}")
+    print(f"  Mean AR            : {pct(ar_series.mean())}")
+    print(f"  Std AR             : {pct(ar_series.std(ddof=1))}")
+    print(f"  t-statistic        : {t_stat:.4f}")
+    print(f"  {fmt_p(p_val)}  {significance_stars(p_val)}")
+    print(f"  95% CI on AR       : [{pct(ci_lo)},  {pct(ci_hi)}]")
+    if p_val < ALPHA:
+        direction = "POSITIVE (H₁a)" if ar_series.mean() > 0 else "NEGATIVE (H₁b)"
+        print(f"\n  ✓ REJECT H₀ at α={ALPHA}  →  {direction} abnormal returns.")
+        if ar_series.mean() < 0:
+            print("    Pro-Trump underperforms the neutral benchmark — consistent with H₁b.")
+            print("    Interpretation: ideologically motivated buyers inflate pro-Trump prices")
+            print("    above their true probability, making the strategy systematically costly.")
         else:
-            print(f"\n  ✗ FAIL TO REJECT H₀ at α={ALPHA}  (p = {p_val:.4f})")
-            print("    Interpretation: The observed mean return does not differ significantly")
-            print("    from zero. The data is consistent with the Efficient Market Hypothesis:")
-            print("    prices on Polymarket appear to reflect unbiased probability estimates")
-            print("    for Trump-related outcomes over this observation window.")
+            print("    Pro-Trump outperforms the neutral benchmark — consistent with H₁a.")
+            print("    Interpretation: pro-Trump outcomes are systematically undervalued.")
+    else:
+        print(f"\n  ✗ FAIL TO REJECT H₀ (p = {p_val:.4f})")
+        print("    Abnormal returns are not statistically distinguishable from zero.")
+        print("    The political direction does not provide a measurable edge over")
+        print("    a random-direction strategy on this dataset.")
 
-        # Bootstrap BCa CI
-        subsection(f"2b — Bootstrap BCa Confidence Interval  [{label}]")
-        print("""  Method: scipy.stats.bootstrap with BCa method (10,000 resamples)
-  Source: Efron & Tibshirani (1993)
-  Purpose: Assumption-free confidence interval — valid regardless of the
-  non-normality detected in the return distribution.
-""")
-        rng     = np.random.default_rng(42)
-        bs_res  = scipy_bootstrap(
-            (r,), statistic=np.mean,
-            n_resamples=10_000, confidence_level=0.95,
-            method="BCa", random_state=rng
-        )
-        bca_lo  = bs_res.confidence_interval.low
-        bca_hi  = bs_res.confidence_interval.high
-        print(f"  BCa 95% CI : [{pct(bca_lo)},  {pct(bca_hi)}]")
-        if bca_lo > 0:
-            print("  ✓ Entire CI above zero — bootstrap confirms positive abnormal returns.")
-        elif bca_hi < 0:
-            print("  ✓ Entire CI below zero — bootstrap confirms negative abnormal returns.")
+    # 2c — Bootstrap BCa on AR
+    subsection("2c — Bootstrap BCa CI on Abnormal Returns")
+    print("  Method: scipy.stats.bootstrap, BCa, 10,000 resamples (Efron & Tibshirani 1993)\n")
+    rng_bs = np.random.default_rng(42)
+    bs_res = scipy_bootstrap((ar_series,), statistic=np.mean, n_resamples=10_000,
+                              confidence_level=0.95, method="BCa", random_state=rng_bs)
+    bca_lo, bca_hi = bs_res.confidence_interval.low, bs_res.confidence_interval.high
+    print(f"  BCa 95% CI : [{pct(bca_lo)},  {pct(bca_hi)}]")
+    if bca_lo > 0:
+        print("  ✓ Entire CI above zero — bootstrap confirms positive abnormal returns.")
+    elif bca_hi < 0:
+        print("  ✓ Entire CI below zero — bootstrap confirms negative abnormal returns.")
+    else:
+        print("  ✗ CI straddles zero — bootstrap cannot confirm abnormal returns.")
+
+    # 2d — Wilcoxon on AR
+    subsection("2d — Wilcoxon Signed-Rank on Abnormal Returns")
+    print("  Non-parametric median test on AR series (Wilcoxon 1945)\n")
+    try:
+        w_stat, w_p = stats.wilcoxon(ar_series, alternative="two-sided")
+        print(f"  W = {w_stat:.1f},  {fmt_p(w_p)}  {significance_stars(w_p)}")
+        if w_p < ALPHA:
+            print(f"  ✓ REJECT H₀ — median AR significantly different from zero.")
         else:
-            print("  ✗ CI straddles zero — bootstrap cannot confirm abnormal returns.")
-            print("    Consistent with failing to reject H₀.")
+            print(f"  ✗ FAIL TO REJECT H₀ — median AR not significantly different from zero.")
+    except Exception as e:
+        print(f"  Could not compute: {e}")
 
-        # Wilcoxon signed-rank test
-        subsection(f"2c — Wilcoxon Signed-Rank Test  [{label}]")
-        print("""  Method: scipy.stats.wilcoxon
-  Source: Wilcoxon (1945); Hollander & Wolfe (1999)
-  Purpose: Non-parametric alternative to the t-test. Tests whether the
-  median daily return differs from zero. Makes no distributional assumptions.
-  Appropriate given the non-normality detected (Jarque-Bera significant).
-""")
-        try:
-            w_stat, w_p = stats.wilcoxon(r, alternative="two-sided")
-            print(f"  W-statistic : {w_stat:.1f}")
-            print(f"  {fmt_p(w_p)}  {significance_stars(w_p)}")
-            if w_p < ALPHA:
-                print(f"  ✓ REJECT H₀ at α={ALPHA} — median return significantly different from zero.")
-            else:
-                print(f"  ✗ FAIL TO REJECT H₀ at α={ALPHA} — median not significantly different from zero.")
-        except Exception as e:
-            print(f"  Could not compute: {e}")
+    # 2e — Non-parametric empirical p-value
+    subsection("2e — Non-Parametric Percentile Test")
+    print("  Empirical p-value: fraction of neutral sims achieving ≥ pro-Trump mean return.\n")
+    emp_p_one  = float((mean_return_sims >= r_protrump.mean()).mean())
+    emp_p_two  = min(emp_p_one, 1.0 - emp_p_one) * 2
+    print(f"  P(neutral ≥ pro-Trump) : {emp_p_one:.4f}  (one-tailed; fraction of sims that beat pro-Trump)")
+    print(f"  Two-tailed equiv.      : {emp_p_two:.4f}  {significance_stars(emp_p_two)}")
+    if emp_p_one >= 1 - ALPHA:
+        # Almost all neutral sims beat pro-Trump → pro-Trump is in the lower tail
+        print(f"  ✓ Pro-Trump significantly UNDERPERFORMS neutral benchmark at α={ALPHA}.")
+        print(f"    {emp_p_one*100:.1f}% of random-direction portfolios achieve higher mean returns.")
+        print("    Consistent with H₁b: pro-Trump direction destroys value vs neutral chance.")
+    elif emp_p_one <= ALPHA:
+        # Very few neutral sims beat pro-Trump → pro-Trump is in the upper tail
+        print(f"  ✓ Pro-Trump significantly OUTPERFORMS neutral benchmark at α={ALPHA}.")
+        print("    Consistent with H₁a: pro-Trump direction adds value vs neutral chance.")
+    else:
+        print(f"  ✗ No significant directional deviation from the neutral benchmark.")
 
-        # OLS trend regression
-        subsection(f"2d — OLS Trend Regression on Equity Curve  [{label}]")
-        print("""  Method: OLS regression of cumulative P&L on time index t
-  Model:  total_pnl_t = α + β·t + ε_t
-  Source: Wooldridge (2012)
-  Purpose: Tests whether the portfolio has a statistically significant linear
-  trend — a positive β indicates growing P&L over time (strategy improving),
-  negative β indicates consistent losses.
-""")
-        clean = curve.dropna(subset=["total_pnl"])
-        t_idx = np.arange(len(clean))
-        y     = clean["total_pnl"].values
-        X     = sm.add_constant(t_idx)
+    # 2f — OLS trend (robustness)
+    subsection("2f — OLS Trend on Pro-Trump Equity Curve  [Robustness]")
+    print("  Model: total_pnl_t = α + β·t + ε_t  (HC3 robust SE, Wooldridge 2012)\n")
+    for curve, label in [(curve_clean, "CLEAN SERIES"), (curve_full, "FULL SERIES")]:
+        clean_df = curve.dropna(subset=["total_pnl"])
+        t_idx = np.arange(len(clean_df))
+        y = clean_df["total_pnl"].values
+        X = sm.add_constant(t_idx)
         model = sm.OLS(y, X).fit(cov_type="HC3")
-        beta  = model.params[1]
-        beta_p = model.pvalues[1]
-        r2    = model.rsquared
-        print(f"  Slope β ($/day)      : {beta:.4f}  → {beta*365:.2f} $/year")
-        print(f"  R²                   : {r2:.4f}")
-        print(f"  {fmt_p(beta_p)}  {significance_stars(beta_p)}")
-        if beta_p < ALPHA:
-            direction = "UPWARD" if beta > 0 else "DOWNWARD"
-            print(f"  ✓ Statistically significant {direction} trend in portfolio P&L.")
-        else:
-            print(f"  ✗ No statistically significant trend detected.")
-        print()
+        beta, beta_p, r2 = model.params[1], model.pvalues[1], model.rsquared
+        print(f"  [{label}]  β = {beta:.4f} $/day  ({beta*365:.2f} $/yr)  "
+              f"R² = {r2:.4f}  {fmt_p(beta_p)}  {significance_stars(beta_p)}")
+
+    # 2g — Raw μ=0 t-test (secondary reference)
+    subsection("2g — Raw Return t-Test vs Zero  [Secondary]")
+    print("  Tests H₀: μ=0 directly on pro-Trump raw returns (no benchmark comparison).\n")
+    for curve, label in [(curve_clean, "CLEAN"), (curve_full, "FULL")]:
+        r = curve["daily_return"].dropna().values
+        t_s, p_v = stats.ttest_1samp(r, popmean=0)
+        print(f"  [{label:5s}]  N={len(r):3d}  mean={pct(r.mean())}  "
+              f"t={t_s:.4f}  {fmt_p(p_v)}  {significance_stars(p_v)}")
+    print()
 
 
 def print_risk_metrics(metrics):
@@ -686,41 +826,6 @@ def print_per_market(mkt_pnl):
     for row in mkt_pnl.nsmallest(5, "unrealised_pnl").itertuples():
         print(f"    {row.market_id[:20]:20s}  {row.side:3s}  entry={row.avg_entry:.3f}  "
               f"now={row.current_price:.3f}  P&L={usd(row.unrealised_pnl)}")
-    print()
-
-
-def print_counterfactual(curve_pro, curve_anti):
-    section("SECTION 6 — ANTI-TRUMP COUNTERFACTUAL")
-    print("""
-  To test whether the strategy's performance is specific to the pro-Trump
-  direction, we construct an anti-Trump counterfactual: for every trade in
-  the actual portfolio, we simulate having bet in the OPPOSITE direction
-  (YES → NO, NO → YES) using the same dates and quantities.
-
-  If the anti-Trump strategy performs symmetrically (similarly negative),
-  the losses are not directional — consistent with general friction
-  (bid-ask spreads, market illiquidity).
-
-  If pro-Trump significantly underperforms anti-Trump, it implies that
-  pro-Trump outcomes are systematically overpriced — direct evidence of H₁b.
-""")
-    pro_final  = curve_pro["total_pnl"].iloc[-1]
-    anti_final = curve_anti["total_pnl"].iloc[-1]
-    diff       = pro_final - anti_final
-
-    print(f"  Pro-Trump final P&L  : {usd(pro_final)}")
-    print(f"  Anti-Trump final P&L : {usd(anti_final)}")
-    print(f"  Difference           : {usd(diff)}")
-
-    if diff < 0:
-        print(f"\n  Pro-Trump underperforms anti-Trump by {usd(abs(diff))}.")
-        print("  This suggests pro-Trump outcomes are priced higher than their true")
-        print("  probability — consistent with H₁b (ideological overvaluation).")
-    elif diff > 0:
-        print(f"\n  Pro-Trump outperforms anti-Trump by {usd(diff)}.")
-        print("  This suggests pro-Trump outcomes are underpriced — consistent with H₁a.")
-    else:
-        print("\n  Symmetric performance — no directional bias detected.")
     print()
 
 
@@ -933,33 +1038,49 @@ def fig7_market_pnl(mkt_pnl, top_n=20):
     save_fig(fig, "fig7_market_pnl.png")
 
 
-def fig8_pro_vs_anti(curve_pro, curve_anti):
-    """Fig 8: Pro-Trump vs Anti-Trump equity curves."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+def fig8_mc_equity_comparison(curve_full, pnl_sims_mc, date_range_mc, prosp_start=None):
+    """Fig 8: Pro-Trump cumulative P&L vs neutral benchmark fan (median + 5–95% band)."""
+    T_mc  = pnl_sims_mc.shape[1]
+    x_mc  = pd.to_datetime(list(date_range_mc)[:T_mc])
 
-    # Top panel: portfolio value
-    ax1.plot(curve_pro["date"],  curve_pro["portfolio_value"],  color=C_PRO,  linewidth=2.0, label="Pro-Trump (actual)")
-    ax1.plot(curve_anti["date"], curve_anti["portfolio_value"], color=C_ANTI, linewidth=2.0, linestyle="--", label="Anti-Trump (counterfactual)")
-    ax1.plot(curve_pro["date"],  curve_pro["invested"],         color=C_INV,  linewidth=1.2, linestyle=":", label="Invested capital")
-    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-    ax1.legend(fontsize=8, loc="upper left")
-    style_ax(ax1, title="Figure 8a — Portfolio Value: Pro-Trump vs Anti-Trump",
-             xlabel="", ylabel="Portfolio value (USD)")
+    p5_mc  = np.nanpercentile(pnl_sims_mc, 5,  axis=0)
+    p25_mc = np.nanpercentile(pnl_sims_mc, 25, axis=0)
+    p50_mc = np.nanpercentile(pnl_sims_mc, 50, axis=0)
+    p75_mc = np.nanpercentile(pnl_sims_mc, 75, axis=0)
+    p95_mc = np.nanpercentile(pnl_sims_mc, 95, axis=0)
 
-    # Bottom panel: cumulative P&L
-    ax2.plot(curve_pro["date"],  curve_pro["total_pnl"],  color=C_PRO,  linewidth=2.0, label="Pro-Trump P&L")
-    ax2.plot(curve_anti["date"], curve_anti["total_pnl"], color=C_ANTI, linewidth=2.0, linestyle="--", label="Anti-Trump P&L")
-    ax2.axhline(y=0, color=C_TEXT, linewidth=0.8, linestyle=":")
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-    ax2.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
-    plt.setp(ax2.xaxis.get_majorticklabels(), rotation=30, ha="right")
-    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-    ax2.legend(fontsize=8, loc="upper left")
-    style_ax(ax2, title="Figure 8b — Cumulative P&L: Pro-Trump vs Anti-Trump",
-             xlabel="Date", ylabel="Total P&L (USD)")
+    fig, ax = plt.subplots(figsize=(13, 5))
 
+    # Neutral MC fan
+    ax.fill_between(x_mc, p5_mc,  p95_mc, color="#94a3b8", alpha=0.15, label="Neutral 5–95th pct")
+    ax.fill_between(x_mc, p25_mc, p75_mc, color="#94a3b8", alpha=0.28, label="Neutral 25–75th pct")
+    ax.plot(x_mc, p50_mc, color="#94a3b8", linewidth=1.5, linestyle="--", label="Neutral median")
+
+    # Pro-Trump actual
+    ax.plot(curve_full["date"], curve_full["total_pnl"],
+            color=C_PRO, linewidth=2.2, label="Pro-Trump (actual)")
+
+    # Zero line
+    ax.axhline(y=0, color=C_TEXT, linewidth=0.8, linestyle=":")
+
+    # Prospective divider
+    if prosp_start:
+        ax.axvline(pd.to_datetime(prosp_start), color="#64748b",
+                   linewidth=1.0, linestyle="--", alpha=0.7)
+        ax.text(pd.to_datetime(prosp_start), ax.get_ylim()[1] * 0.92,
+                " Live →", fontsize=8, color="#64748b", va="top")
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+    ax.legend(fontsize=8, loc="upper left")
+    style_ax(ax,
+             title="Figure 8 — Cumulative P&L: Pro-Trump vs Neutral Benchmark\n"
+                   "Shaded bands = 10,000 random-direction simulations",
+             xlabel="Date", ylabel="Cumulative P&L (USD)")
     fig.tight_layout()
-    save_fig(fig, "fig8_pro_vs_anti.png")
+    save_fig(fig, "fig8_mc_equity_comparison.png")
 
 
 def fig9_rolling_sharpe(curve, window=20):
@@ -1167,9 +1288,69 @@ def fig10_retro_vs_prosp(curve_retro, curve_prosp):
     save_fig(fig, "fig10_retro_vs_prosp.png")
 
 
+def fig11_mc_benchmark(mean_return_sims, dr_sims, r_protrump, date_range_mc, pct_rank_mc):
+    """Fig 11: Neutral MC benchmark — histogram of simulation means + daily fan chart."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Panel A — histogram of MC mean returns
+    vals     = mean_return_sims * 100
+    pro_mean = float(r_protrump.mean() * 100)
+
+    n, bin_edges, _ = ax1.hist(vals, bins=60, color="#94a3b8", alpha=0.75,
+                                edgecolor="white", linewidth=0.3,
+                                label=f"Neutral benchmark ({len(vals):,} sims)")
+    # Re-shade the tail more extreme than pro-Trump
+    lo_mask = vals <= pro_mean
+    ax1.hist(vals[lo_mask], bins=bin_edges, color=C_LOSS, alpha=0.55,
+             edgecolor="white", linewidth=0.3, label="Below pro-Trump")
+    ax1.axvline(x=pro_mean, color=C_PRO, linewidth=2.2, linestyle="--",
+                label=f"Pro-Trump mean: {pro_mean:.4f}%")
+    y_top = ax1.get_ylim()[1]
+    ax1.text(pro_mean + (bin_edges[-1] - bin_edges[0]) * 0.01, y_top * 0.92,
+             f"{pct_rank_mc:.1f}th\npercentile", fontsize=8.5, color=C_PRO, va="top")
+    ax1.legend(fontsize=8)
+    style_ax(ax1,
+        title="Figure 11a — Neutral Benchmark Distribution\n"
+              "10,000 random-direction simulations vs actual pro-Trump strategy",
+        xlabel="Mean daily return (%)", ylabel="Count")
+
+    # Panel B — fan chart of daily returns over time
+    T = dr_sims.shape[1]
+    dates_arr = list(date_range_mc)[1:T + 1]
+    x = pd.to_datetime(dates_arr)
+
+    p5  = np.nanpercentile(dr_sims, 5,  axis=0) * 100
+    p25 = np.nanpercentile(dr_sims, 25, axis=0) * 100
+    p50 = np.nanpercentile(dr_sims, 50, axis=0) * 100
+    p75 = np.nanpercentile(dr_sims, 75, axis=0) * 100
+    p95 = np.nanpercentile(dr_sims, 95, axis=0) * 100
+
+    ax2.fill_between(x, p5,  p95, color="#94a3b8", alpha=0.20, label="MC 5–95%")
+    ax2.fill_between(x, p25, p75, color="#94a3b8", alpha=0.40, label="MC 25–75%")
+    ax2.plot(x, p50, color="#64748b", linewidth=1.2, linestyle="--", label="MC median")
+
+    # Align pro-Trump series to the same x axis (tail T values)
+    ax2.plot(x[-len(r_protrump):], r_protrump * 100,
+             color=C_PRO, linewidth=1.8, label="Pro-Trump actual")
+    ax2.axhline(y=0, color=C_TEXT, linewidth=0.6, linestyle=":")
+    ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+    ax2.xaxis.set_major_locator(mdates.MonthLocator())
+    plt.setp(ax2.xaxis.get_majorticklabels(), rotation=30, ha="right")
+    ax2.legend(fontsize=8)
+    style_ax(ax2,
+        title="Figure 11b — Daily Returns: Pro-Trump vs Neutral Fan Chart",
+        xlabel="Date", ylabel="Daily return (%)")
+
+    fig.tight_layout()
+    save_fig(fig, "fig11_mc_benchmark.png")
+
+
 # ── EXPORT ────────────────────────────────────────────────────────────────────
 
-def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir):
+def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
+                   mean_return_sims=None, ar_series=None,
+                   r_protrump=None, r_neutral_mean=None,
+                   pct_rank_mc=None):
     # Equity curves
     curve_clean.to_csv(output_dir / "equity_curve_clean.csv", index=False)
     curve_full.to_csv( output_dir / "equity_curve_full.csv",  index=False)
@@ -1177,11 +1358,25 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir):
     # Per-market P&L
     mkt_pnl.to_csv(output_dir / "per_market_pnl.csv", index=False)
 
-    # Key metrics summary
+    # Key metrics summary (add MC percentile rank)
     rows = []
     for key, val in metrics.items():
         rows.append({"metric": key, "value": round(val, 6) if isinstance(val, float) else val})
+    if pct_rank_mc is not None:
+        rows.append({"metric": "mc_pct_rank", "value": round(pct_rank_mc, 2)})
     pd.DataFrame(rows).to_csv(output_dir / "key_metrics.csv", index=False)
+
+    # MC neutral benchmark simulation means
+    if mean_return_sims is not None:
+        pd.DataFrame({"mean_return_sim": mean_return_sims}).to_csv(
+            output_dir / "mc_neutral_means.csv", index=False)
+
+    # Abnormal returns series
+    if ar_series is not None and r_protrump is not None and r_neutral_mean is not None:
+        pd.DataFrame({"ar": ar_series,
+                      "r_protrump": r_protrump,
+                      "r_neutral_mean": r_neutral_mean}).to_csv(
+            output_dir / "abnormal_returns.csv", index=False)
 
     print(f"\n  CSV exports saved to {output_dir}")
 
@@ -1204,8 +1399,7 @@ def main():
 
     # ── Build equity curves ───────────────────────────────────────────────────
     print("\n  Building equity curves …")
-    curve_full  = build_equity_curve(dca, price_lookup, flip_sides=False)
-    curve_anti  = build_equity_curve(dca, price_lookup, flip_sides=True)
+    curve_full  = build_equity_curve(dca, price_lookup)
 
     PROSP_DT  = pd.to_datetime(PROSPECTIVE_START)
     CLEAN_DT  = pd.to_datetime(CLEAN_START)
@@ -1219,6 +1413,17 @@ def main():
     print(f"  Prospective — full  : {curve_prosp['date'].min().date()} → {curve_prosp['date'].max().date()}  ({len(curve_prosp)} days)")
     print(f"  Prospective — clean : {curve_clean['date'].min().date()} → {curve_clean['date'].max().date()}  ({len(curve_clean)} days)")
 
+    # ── Neutral benchmark Monte Carlo ─────────────────────────────────────────
+    print("\n  Building neutral benchmark Monte Carlo (10,000 sims) …")
+    _, mc_date_range, yes_pnl_mat, no_pnl_mat, yes_cost_mat, no_cost_mat = \
+        build_per_market_pnl_curves(dca, price_lookup)
+    dr_sims, mean_sims, pnl_sims_mc = build_neutral_mc(
+        yes_pnl_mat, no_pnl_mat, yes_cost_mat, no_cost_mat)
+    ar_series, r_protrump, r_neutral_mean = compute_abnormal_returns(curve_clean, dr_sims)
+    pct_rank_mc = float((mean_sims < r_protrump.mean()).mean() * 100)
+    print(f"  MC complete: {len(mean_sims):,} sims  |  "
+          f"pro-Trump at {pct_rank_mc:.1f}th percentile of neutral benchmark")
+
     # ── Per-market P&L ────────────────────────────────────────────────────────
     mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps)
 
@@ -1228,11 +1433,10 @@ def main():
     # ── Print all analysis sections ───────────────────────────────────────────
     print_portfolio_overview(curve_clean, mkt_pnl)
     print_diagnostics_summary(curve_clean)
-    print_hypothesis_tests(curve_clean, curve_full)
+    print_hypothesis_tests(curve_clean, curve_full,
+                           ar_series, r_protrump, dr_sims, mean_sims, pct_rank_mc)
     print_risk_metrics(metrics)
     print_per_market(mkt_pnl)
-    print_counterfactual(curve_clean,
-                         curve_anti[curve_anti["date"] >= pd.to_datetime(CLEAN_START)].reset_index(drop=True))
 
     # ── Section 9 — Retrospective vs Prospective ─────────────────────────────
     print_retro_prosp_comparison(curve_retro, curve_prosp, curve_clean)
@@ -1240,6 +1444,7 @@ def main():
     # ── Figures ───────────────────────────────────────────────────────────────
     section("SECTION 7 — GENERATING FIGURES")
     print()
+
     fig1_equity_curve(curve_full, prosp_start=PROSPECTIVE_START)
     fig2_daily_pnl(curve_clean)
     fig3_return_distribution(curve_clean)
@@ -1247,16 +1452,19 @@ def main():
     fig5_acf_pacf(curve_clean)
     fig6_drawdown(curve_clean)
     fig7_market_pnl(mkt_pnl)
-    fig8_pro_vs_anti(curve_clean,
-                     curve_anti[curve_anti["date"] >= pd.to_datetime(CLEAN_START)].reset_index(drop=True))
+    fig8_mc_equity_comparison(curve_full, pnl_sims_mc, mc_date_range, prosp_start=PROSPECTIVE_START)
     fig9_rolling_sharpe(curve_clean)
     if len(curve_retro) > 5:
         fig10_retro_vs_prosp(curve_retro, curve_prosp)
+    fig11_mc_benchmark(mean_sims, dr_sims, r_protrump, mc_date_range, pct_rank_mc)
 
     # ── Export ────────────────────────────────────────────────────────────────
     section("SECTION 8 — EXPORTING DATA")
     print()
-    export_results(curve_clean, curve_full, mkt_pnl, metrics, OUTPUT_DIR)
+    export_results(curve_clean, curve_full, mkt_pnl, metrics, OUTPUT_DIR,
+                   mean_return_sims=mean_sims, ar_series=ar_series,
+                   r_protrump=r_protrump, r_neutral_mean=r_neutral_mean,
+                   pct_rank_mc=pct_rank_mc)
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")
