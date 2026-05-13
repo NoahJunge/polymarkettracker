@@ -16,13 +16,23 @@ This file provides context to Claude (both Claude Code and Claude.ai) about the 
 ### Research Question
 **Does systematic betting on pro-Trump outcomes in Polymarket reveal persistent political bias in market pricing?**
 
+> **Professor's reframing (May 2026):** The thesis now foregrounds the **anti-Trump strategy** as the primary framing. The argument is that politically motivated "crypto-bro" traders on Polymarket systematically *overprice* pro-Trump outcomes, meaning the informed trade is to bet *against* Trump. The pro-Trump strategy (our actual DCA) shows persistent losses; flipping it to anti-Trump shows persistent gains at the 99.79th MC percentile. Both strategies are shown side-by-side in the web app. The pro-Trump DCA remains the empirical instrument; anti-Trump is its mirror and the thesis punchline.
+
 ### Hypotheses
 - **H₀ (Market Efficiency):** A systematic pro-Trump betting strategy yields zero abnormal returns over time. Any observed profits or losses are attributable to random market fluctuations.
 - **H₁a (Positive Political Bias):** A systematic pro-Trump betting strategy yields persistent *positive* abnormal returns — implying Trump-related contracts are systematically *undervalued* (the market underestimates pro-Trump outcomes).
-- **H₁b (Negative Political Bias):** A systematic pro-Trump betting strategy yields persistent *negative* abnormal returns — implying Trump-related contracts are systematically *overvalued*, potentially reflecting ideological overconfidence among politically aligned participants.
+- **H₁b (Negative Political Bias):** A systematic pro-Trump betting strategy yields persistent *negative* abnormal returns — implying Trump-related contracts are systematically *overvalued*, potentially reflecting ideological overconfidence among politically aligned participants. **→ This is the supported hypothesis.**
 
 ### Core Argument
-Prediction markets are theoretically efficient information aggregation mechanisms (Hayek, Fama EMH). But political polarization may cause ideologically motivated traders to distort prices. We test this empirically using a fully automated, rule-based DCA strategy that always bets on the pro-Trump outcome across all Trump-related binary markets on Polymarket, then evaluates whether the resulting portfolio shows statistically significant abnormal returns.
+Prediction markets are theoretically efficient information aggregation mechanisms (Hayek, Fama EMH). But political polarization may cause ideologically motivated traders to distort prices. We test this empirically using a fully automated, rule-based DCA strategy that always bets on the pro-Trump outcome across all Trump-related binary markets on Polymarket, then evaluates whether the resulting portfolio shows statistically significant abnormal returns. **The finding is H₁b: pro-Trump outcomes are systematically overpriced, likely driven by politically motivated ("crypto-bro") retail traders. The anti-Trump counterfactual captures this overpricing premium.**
+
+### Professor's Suggestions (meeting, ~May 2026)
+- Reframe thesis around anti-Trump strategy as the "interesting" finding
+- Investigate who Polymarket users are (crypto-demographics, US ban, retail vs. sophisticated)
+- Crypto-bro narrative: politically aligned retail traders blindly buy pro-Trump, inflating prices
+- Explore alpha/beta framework — is this alpha generation or exposure to political risk?
+- Consider stock market vs. Polymarket investment comparison angle
+- Make the framing more provocative/engaging for academic audience
 
 ---
 
@@ -132,9 +142,15 @@ All tests run in `backend/analysis/run_analysis.py`. Results visible at `/analys
 - Neither individually significant on t-test; full-series OLS trend is p < 0.001
 - Consistency across periods strengthens the structural interpretation
 
+**Anti-Trump counterfactual (now primary thesis framing):**
+- Flip YES↔NO on every trade — entry price taken from the opposite side's snapshot price
+- Anti-Trump clean series (T=75): mean daily return = +0.031%, Sharpe = +0.532, Final P&L = +$287.54
+- Anti-Trump MC percentile rank = **99.79th** (top 0.21% of 10,000 neutral simulations) — highly significant
+- The ~$592 gap between anti-Trump (+$288) and pro-Trump (-$304) is the strongest directional result
+
 ---
 
-## 4. Dataset — Current Numbers (as of 2026-05-06)
+## 4. Dataset — Current Numbers (as of 2026-05-13)
 
 | Metric | Value |
 |--------|-------|
@@ -155,7 +171,13 @@ All tests run in `backend/analysis/run_analysis.py`. Results visible at `/analys
 | Feb 13–21, 2026 | Gamma API | 120–235 markets/day | Growing coverage |
 | Feb 22 – present | Gamma API (prospective, clean) | ~149–204 markets/day | Primary analysis period |
 
-**Key data quality note:** The "clean" prospective series begins 2026-02-22 when stable daily coverage was established. The t-test primary result uses this period (T=73 obs). The full series (T=284) is the robustness check.
+**Key data quality note:** The "clean" prospective series begins 2026-02-22 when stable daily coverage was established. The t-test primary result uses this period (T=75 obs as of 2026-05-13). The full series (T=284+) is the robustness check.
+
+### Key results (as of 2026-05-13, T=75 clean series)
+| Strategy | Final P&L | Mean Daily Return | Sharpe (ann.) | MC Percentile |
+|----------|-----------|-------------------|---------------|---------------|
+| Pro-Trump | −$304.42 | −0.0565% | −0.537 | 0.5th (bottom) |
+| Anti-Trump | +$287.54 | +0.031% | +0.532 | 99.79th (top) |
 
 ---
 
@@ -282,10 +304,26 @@ cd backend && pytest tests/ -v   # 92 unit tests, no ES dependency
 ### Analysis Script
 `backend/analysis/run_analysis.py` — standalone, reads only `seed_data/seed.xlsx`:
 - **Sections 1–9:** Portfolio overview, diagnostics, hypothesis tests, risk metrics, cross-sectional analysis, anti-Trump counterfactual, figures, export, retrospective vs prospective comparison
-- **Output:** 10 PNG figures + 4 CSVs → `backend/analysis/output/`
-- **Figures:** fig1 (equity curve, full timeline with period divider), fig2 (daily P&L), fig3 (return distribution), fig4 (Q-Q), fig5 (ACF/PACF), fig6 (drawdown), fig7 (per-market P&L), fig8 (pro vs anti counterfactual), fig9 (rolling Sharpe), fig10 (retrospective vs prospective)
+- **Output:** 22 PNG figures + 7 CSVs → `backend/analysis/output/`
+- **Pro-Trump figures:** fig1–fig11 (equity curve, daily P&L, return dist., Q-Q, ACF/PACF, drawdown, per-market P&L, MC equity fan, rolling Sharpe, retro/prosp, MC benchmark)
+- **Anti-Trump figures:** fig1–fig6, fig8–fig11 with `_anti` suffix (same chart types, orange color)
+- **Comparison figure:** fig12_strategy_comparison.png — both strategies vs neutral MC benchmark
+- **CSVs:** equity_curve_clean/full.csv, equity_curve_clean/full_anti.csv, key_metrics.csv, key_metrics_anti.csv, per_market_pnl.csv, mc_neutral_means.csv, abnormal_returns.csv
 - **Run:** `docker-compose exec backend python3 analysis/run_analysis.py`
 - **Web UI:** visible at `http://localhost:3000/analysis` (Analysis page)
+
+### Analysis Page — Tab Structure (updated May 2026)
+The `/analysis` page has **three tabs**: Pro-Trump | Anti-Trump | Monte Carlo
+- **Pro-Trump tab:** all pro-Trump metrics, equity sparkline (both strategies overlaid), period table, figures gallery (pro-Trump figures only)
+- **Anti-Trump tab:** all anti-Trump metrics with H₁b verdict card, equity sparkline (both overlaid), figures gallery (anti figures + fig12)
+- **Monte Carlo tab:** interactive neutral benchmark simulation (unchanged)
+- Equity sparkline uses `ComposedChart` with two `Line` components — purple (pro) + orange (anti)
+
+### API — `GET /api/analysis/metrics` response (updated May 2026)
+In addition to the existing pro-Trump fields, the response now includes:
+- `anti_metrics` — same structure as `metrics` but for anti-Trump clean series
+- `anti_equity_series` — anti-Trump full equity curve (date, total_pnl, portfolio_value, invested)
+- `anti_periods` — retrospective/prospective/full period stats for anti-Trump
 
 ### Gamma API Notes
 - Base URL: `https://gamma-api.polymarket.com`
