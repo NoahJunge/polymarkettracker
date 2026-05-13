@@ -38,6 +38,7 @@ FIGURE_META = [
     ("fig9_rolling_sharpe.png",        "Rolling 20-Day Sharpe Ratio",                   "Risk-adjusted performance over time"),
     ("fig10_retro_vs_prosp.png",     "Retrospective vs Prospective",         "Period comparison (professor's suggested split)"),
     ("fig11_mc_benchmark.png",       "Neutral Benchmark Monte Carlo",        "10,000 random-direction simulations vs pro-Trump"),
+    ("fig12_strategy_comparison.png", "Pro-Trump vs Anti-Trump vs Neutral",  "Both strategy equity curves overlaid with neutral Monte Carlo benchmark"),
 ]
 
 SEED_PATH = Path(__file__).parent.parent / "seed_data" / "seed.xlsx"
@@ -200,6 +201,38 @@ async def get_metrics():
         result["equity_series"] = df[["date", "total_pnl", "portfolio_value", "invested"]].assign(
             date=df["date"].dt.strftime("%Y-%m-%d")
         ).to_dict("records")
+
+    # Anti-Trump metrics and equity series
+    anti_metrics_path = OUTPUT_DIR / "key_metrics_anti.csv"
+    anti_equity_path  = OUTPUT_DIR / "equity_curve_full_anti.csv"
+
+    if anti_metrics_path.exists():
+        anti_df = pd.read_csv(anti_metrics_path)
+        anti_m: dict = {}
+        for _, row in anti_df.iterrows():
+            val = row["value"]
+            try:
+                val = float(val)
+            except (ValueError, TypeError):
+                pass
+            anti_m[row["metric"]] = val
+        result["anti_metrics"] = anti_m
+
+    if anti_equity_path.exists():
+        adf = pd.read_csv(anti_equity_path)
+        adf["date"] = pd.to_datetime(adf["date"])
+        retro_a = adf[adf["date"] <  PROSP_START].copy()
+        prosp_a = adf[adf["date"] >= PROSP_START].copy()
+        result["anti_equity_series"] = (
+            adf[["date", "total_pnl", "portfolio_value", "invested"]]
+            .assign(date=adf["date"].dt.strftime("%Y-%m-%d"))
+            .to_dict("records")
+        )
+        result["anti_periods"] = {
+            "retrospective": _stats(retro_a, "Retrospective"),
+            "prospective":   _stats(prosp_a, "Prospective"),
+            "full":          _stats(adf,     "Full Series"),
+        }
 
     return result
 

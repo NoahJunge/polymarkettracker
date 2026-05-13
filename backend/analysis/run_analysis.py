@@ -66,6 +66,7 @@ ALPHA              = 0.05           # significance level
 
 # Thesis colour palette
 C_PRO    = "#7c3aed"   # violet  — pro-Trump strategy
+C_ANTI   = "#ea580c"   # orange  — anti-Trump strategy
 C_GAIN   = "#16a34a"   # green
 C_LOSS   = "#dc2626"   # red
 C_INV    = "#3b82f6"   # blue    — invested capital
@@ -1345,15 +1346,52 @@ def fig11_mc_benchmark(mean_return_sims, dr_sims, r_protrump, date_range_mc, pct
     save_fig(fig, "fig11_mc_benchmark.png")
 
 
+def fig12_strategy_comparison(curve_pro, curve_anti, pnl_sims_mc, date_range):
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    dr = pd.to_datetime(date_range)
+    p5  = np.percentile(pnl_sims_mc, 5,  axis=0)
+    p95 = np.percentile(pnl_sims_mc, 95, axis=0)
+    p50 = np.percentile(pnl_sims_mc, 50, axis=0)
+
+    ax.fill_between(dr, p5, p95, alpha=0.10, color="gray", label="Neutral MC 5–95%")
+    ax.plot(dr, p50, color="gray", lw=1, linestyle="--", alpha=0.6, label="Neutral median")
+
+    ax.plot(pd.to_datetime(curve_pro["date"]),  curve_pro["total_pnl"],  color=C_PRO,  lw=2.0, label="Pro-Trump")
+    ax.plot(pd.to_datetime(curve_anti["date"]), curve_anti["total_pnl"], color=C_ANTI, lw=2.0, label="Anti-Trump")
+    ax.axhline(0, color=C_TEXT, lw=0.7, linestyle=":")
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=8)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:+.0f}"))
+
+    style_ax(ax,
+        title="Figure 12 — Pro-Trump vs Anti-Trump — Cumulative P&L vs Neutral Benchmark",
+        xlabel="Date", ylabel="Cumulative P&L (USD)")
+    ax.legend(fontsize=9)
+
+    fig.tight_layout()
+    save_fig(fig, "fig12_strategy_comparison.png")
+
+
 # ── EXPORT ────────────────────────────────────────────────────────────────────
 
 def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
                    mean_return_sims=None, ar_series=None,
                    r_protrump=None, r_neutral_mean=None,
-                   pct_rank_mc=None):
+                   pct_rank_mc=None,
+                   curve_clean_anti=None, curve_full_anti=None,
+                   metrics_anti=None, pct_rank_mc_anti=None):
     # Equity curves
     curve_clean.to_csv(output_dir / "equity_curve_clean.csv", index=False)
     curve_full.to_csv( output_dir / "equity_curve_full.csv",  index=False)
+
+    # Anti-Trump equity curves
+    if curve_clean_anti is not None:
+        curve_clean_anti.to_csv(output_dir / "equity_curve_clean_anti.csv", index=False)
+    if curve_full_anti is not None:
+        curve_full_anti.to_csv(output_dir / "equity_curve_full_anti.csv",  index=False)
 
     # Per-market P&L
     mkt_pnl.to_csv(output_dir / "per_market_pnl.csv", index=False)
@@ -1365,6 +1403,15 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
     if pct_rank_mc is not None:
         rows.append({"metric": "mc_pct_rank", "value": round(pct_rank_mc, 2)})
     pd.DataFrame(rows).to_csv(output_dir / "key_metrics.csv", index=False)
+
+    # Anti-Trump key metrics
+    if metrics_anti is not None:
+        anti_rows = []
+        for key, val in metrics_anti.items():
+            anti_rows.append({"metric": key, "value": round(val, 6) if isinstance(val, float) else val})
+        if pct_rank_mc_anti is not None:
+            anti_rows.append({"metric": "mc_pct_rank", "value": round(pct_rank_mc_anti, 2)})
+        pd.DataFrame(anti_rows).to_csv(output_dir / "key_metrics_anti.csv", index=False)
 
     # MC neutral benchmark simulation means
     if mean_return_sims is not None:
@@ -1400,6 +1447,7 @@ def main():
     # ── Build equity curves ───────────────────────────────────────────────────
     print("\n  Building equity curves …")
     curve_full  = build_equity_curve(dca, price_lookup)
+    curve_full_anti = build_equity_curve(dca, price_lookup, flip_sides=True)
 
     PROSP_DT  = pd.to_datetime(PROSPECTIVE_START)
     CLEAN_DT  = pd.to_datetime(CLEAN_START)
@@ -1407,6 +1455,10 @@ def main():
     curve_retro = curve_full[curve_full["date"] <  PROSP_DT].copy().reset_index(drop=True)
     curve_prosp = curve_full[curve_full["date"] >= PROSP_DT].copy().reset_index(drop=True)
     curve_clean = curve_full[curve_full["date"] >= CLEAN_DT ].copy().reset_index(drop=True)
+
+    curve_retro_anti = curve_full_anti[curve_full_anti["date"] <  PROSP_DT].copy().reset_index(drop=True)
+    curve_prosp_anti = curve_full_anti[curve_full_anti["date"] >= PROSP_DT].copy().reset_index(drop=True)
+    curve_clean_anti = curve_full_anti[curve_full_anti["date"] >= CLEAN_DT ].copy().reset_index(drop=True)
 
     print(f"  Full series         : {curve_full['date'].min().date()} → {curve_full['date'].max().date()}  ({len(curve_full)} days)")
     print(f"  Retrospective period: {curve_retro['date'].min().date()} → {curve_retro['date'].max().date()}  ({len(curve_retro)} days)")
@@ -1428,7 +1480,10 @@ def main():
     mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps)
 
     # ── Risk metrics (clean series as primary) ────────────────────────────────
-    metrics = compute_risk_metrics(curve_clean, label="CLEAN SERIES")
+    metrics      = compute_risk_metrics(curve_clean,      label="CLEAN SERIES")
+    metrics_anti = compute_risk_metrics(curve_clean_anti, label="CLEAN SERIES (ANTI-TRUMP)")
+    r_anti           = curve_clean_anti["daily_return"].dropna().values
+    pct_rank_mc_anti = float((mean_sims < r_anti.mean()).mean() * 100)
 
     # ── Print all analysis sections ───────────────────────────────────────────
     print_portfolio_overview(curve_clean, mkt_pnl)
@@ -1457,6 +1512,7 @@ def main():
     if len(curve_retro) > 5:
         fig10_retro_vs_prosp(curve_retro, curve_prosp)
     fig11_mc_benchmark(mean_sims, dr_sims, r_protrump, mc_date_range, pct_rank_mc)
+    fig12_strategy_comparison(curve_full, curve_full_anti, pnl_sims_mc, mc_date_range)
 
     # ── Export ────────────────────────────────────────────────────────────────
     section("SECTION 8 — EXPORTING DATA")
@@ -1464,7 +1520,9 @@ def main():
     export_results(curve_clean, curve_full, mkt_pnl, metrics, OUTPUT_DIR,
                    mean_return_sims=mean_sims, ar_series=ar_series,
                    r_protrump=r_protrump, r_neutral_mean=r_neutral_mean,
-                   pct_rank_mc=pct_rank_mc)
+                   pct_rank_mc=pct_rank_mc,
+                   curve_clean_anti=curve_clean_anti, curve_full_anti=curve_full_anti,
+                   metrics_anti=metrics_anti, pct_rank_mc_anti=pct_rank_mc_anti)
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")

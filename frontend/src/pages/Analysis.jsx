@@ -218,25 +218,28 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-function EquitySpark({ data }) {
-  if (!data?.length) return null;
+function EquitySpark({ proData, antiData }) {
+  if (!proData?.length) return null;
 
+  const antiMap = {};
+  if (antiData?.length) antiData.forEach((d) => { antiMap[d.date] = d.total_pnl; });
+  const merged = proData.map((d) => ({
+    date:     d.date,
+    pro_pnl:  d.total_pnl,
+    ...(antiData?.length ? { anti_pnl: antiMap[d.date] ?? null } : {}),
+  }));
+
+  const hasAnti = antiData?.length > 0;
   const tickFormatter = (d) => {
     const dt = new Date(d);
     return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
-  const prospIdx = data.findIndex((d) => d.date >= PROSP_START);
-  const prospDate = prospIdx >= 0 ? data[prospIdx].date : null;
+  const prospIdx = proData.findIndex((d) => d.date >= PROSP_START);
+  const prospDate = prospIdx >= 0 ? proData[prospIdx].date : null;
 
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={data} margin={{ top: 8, right: 16, left: 60, bottom: 0 }}>
-        <defs>
-          <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={C_PRO} stopOpacity={0.25} />
-            <stop offset="95%" stopColor={C_PRO} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
+      <ComposedChart data={merged} margin={{ top: 8, right: 16, left: 60, bottom: 0 }}>
         <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="date"
@@ -262,16 +265,27 @@ function EquitySpark({ data }) {
           />
         )}
         <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
-        <Area
+        <Line
           type="monotone"
-          dataKey="total_pnl"
-          name="Cumulative P&L"
+          dataKey="pro_pnl"
+          name="Pro-Trump P&L"
           stroke={C_PRO}
-          fill="url(#pnlGrad)"
           strokeWidth={2}
           dot={false}
+          connectNulls
         />
-      </AreaChart>
+        {hasAnti && (
+          <Line
+            type="monotone"
+            dataKey="anti_pnl"
+            name="Anti-Trump P&L"
+            stroke={C_ANTI}
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+          />
+        )}
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }
@@ -423,7 +437,7 @@ export default function Analysis() {
   const [error,   setError]   = useState(null);
 
   // Monte Carlo tab state
-  const [activeTab,  setActiveTab]  = useState("results");
+  const [activeTab,  setActiveTab]  = useState("pro");
   const [mcNSims,    setMcNSims]    = useState(1000);
   const [mcRunning,  setMcRunning]  = useState(false);
   const [mcResult,   setMcResult]   = useState(null);
@@ -481,6 +495,10 @@ export default function Analysis() {
   const mcBenchmark = metrics?.mc_benchmark;
   const figures = status?.figures || [];
 
+  const antiM       = metrics?.anti_metrics || {};
+  const antiPeriods = metrics?.anti_periods;
+  const antiEquity  = metrics?.anti_equity_series;
+
   const lastRun = status?.last_run_utc
     ? new Date(status.last_run_utc).toLocaleString()
     : "Never";
@@ -511,7 +529,7 @@ export default function Analysis() {
 
       {/* Tab switcher */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-        {[["results", "Results"], ["montecarlo", "Monte Carlo"]].map(([id, label]) => (
+        {[["pro", "Pro-Trump"], ["anti", "Anti-Trump"], ["montecarlo", "Monte Carlo"]].map(([id, label]) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
@@ -527,7 +545,7 @@ export default function Analysis() {
       </div>
 
       {/* Run log (Results tab only) */}
-      {activeTab === "results" && runLog && (
+      {activeTab === "pro" && runLog && (
         <Card className="p-4">
           <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Analysis Output</p>
           <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-y-auto">
@@ -536,16 +554,16 @@ export default function Analysis() {
         </Card>
       )}
 
-      {activeTab === "results" && loading && (
+      {activeTab === "pro" && loading && (
         <div className="text-center py-16 text-slate-400 text-sm">Loading analysis results…</div>
       )}
-      {activeTab === "results" && error && !loading && (
+      {activeTab === "pro" && error && !loading && (
         <div className="text-center py-16 text-slate-400 text-sm">
           {error} — run the analysis to generate results.
         </div>
       )}
 
-      {activeTab === "results" && !loading && metrics && (
+      {activeTab === "pro" && !loading && metrics && (
         <>
           {/* Key metrics tiles */}
           <div>
@@ -701,8 +719,9 @@ export default function Analysis() {
               </h2>
               <p className="text-xs text-slate-400 mb-3">
                 Dashed line marks 2026-01-26 — where retrospective (CLOB historical) ends and prospective (live collection) begins.
+                {antiEquity?.length > 0 && " Orange = anti-Trump counterfactual overlaid for comparison."}
               </p>
-              <EquitySpark data={equityData} />
+              <EquitySpark proData={equityData} antiData={antiEquity} />
             </Card>
           )}
 
@@ -768,7 +787,7 @@ export default function Analysis() {
       )}
 
       {/* Figures gallery */}
-      {activeTab === "results" && figures.some((f) => f.exists) && (
+      {activeTab === "pro" && figures.some((f) => f.exists) && (
         <div>
           <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
             Figures ({figures.filter((f) => f.exists).length} / {figures.length})
@@ -782,7 +801,7 @@ export default function Analysis() {
         </div>
       )}
 
-      {activeTab === "results" && !loading && !metrics && (
+      {activeTab === "pro" && !loading && !metrics && (
         <Card className="p-12 text-center">
           <p className="text-slate-500 text-sm mb-4">No analysis results found.</p>
           <button
@@ -794,6 +813,217 @@ export default function Analysis() {
             {running ? "Running…" : "Run Analysis Now"}
           </button>
         </Card>
+      )}
+
+      {/* ── Anti-Trump tab ────────────────────────────────────────────── */}
+      {activeTab === "anti" && loading && (
+        <div className="text-center py-16 text-slate-400 text-sm">Loading analysis results…</div>
+      )}
+      {activeTab === "anti" && !loading && !metrics && (
+        <Card className="p-12 text-center">
+          <p className="text-slate-500 text-sm mb-4">No analysis results found.</p>
+          <button
+            onClick={handleRunAnalysis}
+            disabled={running}
+            className="px-5 py-2.5 text-sm font-medium rounded-lg text-white"
+            style={{ background: C_ANTI }}
+          >
+            {running ? "Running…" : "Run Analysis Now"}
+          </button>
+        </Card>
+      )}
+
+      {activeTab === "anti" && !loading && metrics && (
+        <>
+          {/* Key metrics tiles */}
+          <div>
+            <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Key Results — Anti-Trump Strategy</h2>
+            <p className="text-xs text-slate-400 mb-3">
+              Counterfactual: always bet <em>against</em> Trump — flip YES↔NO on every market. Same markets, dates, and trade sizes as the pro-Trump strategy.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <MetricTile
+                label="Final P&L"
+                value={fmtUsd(antiM.final_pnl)}
+                sub={`${fmtPct(antiM.return_on_invested)} of invested`}
+                color={antiM.final_pnl >= 0 ? C_GAIN : C_LOSS}
+              />
+              <MetricTile
+                label="MC Percentile Rank"
+                value={antiM.mc_pct_rank != null ? `${Number(antiM.mc_pct_rank).toFixed(1)}th` : "—"}
+                sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
+                color={
+                  antiM.mc_pct_rank == null ? "#111827"
+                  : antiM.mc_pct_rank <= 5 ? C_LOSS
+                  : antiM.mc_pct_rank >= 95 ? C_GAIN
+                  : "#111827"
+                }
+              />
+              <MetricTile
+                label="Mean Daily Return"
+                value={fmtPct(antiM.mean_daily_return * 100, 4)}
+                sub="Prospective (clean)"
+                color={antiM.mean_daily_return >= 0 ? C_GAIN : C_LOSS}
+              />
+              <MetricTile
+                label="Annualised Sharpe"
+                value={fmt(antiM.sharpe_ann, 3)}
+                sub="√365 annualisation"
+                color={antiM.sharpe_ann >= 0 ? C_GAIN : C_LOSS}
+              />
+              <MetricTile
+                label="Max Drawdown"
+                value={fmtPct(antiM.max_dd_pct)}
+                sub={fmtUsd(antiM.max_dd_usd)}
+                color={C_LOSS}
+              />
+              <MetricTile
+                label="Win Rate"
+                value={mktSummary ? `${(100 - mktSummary.win_rate).toFixed(1)}%` : "—"}
+                sub={mktSummary ? `${mktSummary.negative}/${mktSummary.total} markets` : ""}
+                color={mktSummary ? ((100 - mktSummary.win_rate) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
+              />
+            </div>
+          </div>
+
+          {/* Secondary metric row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <MetricTile
+              label="Annualised Return"
+              value={fmtPct(antiM.ann_return * 100)}
+              sub="Prospective clean series"
+              color={antiM.ann_return >= 0 ? C_GAIN : C_LOSS}
+            />
+            <MetricTile
+              label="VaR 95% (daily)"
+              value={fmtPct(antiM.var_95 * 100)}
+              sub={`CVaR 95%: ${fmtPct(antiM.cvar_95 * 100)}`}
+              color={C_LOSS}
+            />
+            <MetricTile
+              label="Profit Factor"
+              value={mktSummary?.profit_factor != null ? fmt(1 / mktSummary.profit_factor, 3) : "—"}
+              sub="Gross gain / gross loss"
+              color={mktSummary?.profit_factor != null && (1 / mktSummary.profit_factor) >= 1 ? C_GAIN : C_LOSS}
+            />
+          </div>
+
+          {/* MC percentile verdict */}
+          {antiM.mc_pct_rank != null && (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                Neutral Benchmark Comparison
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">
+                Anti-Trump strategy compared to the same 10,000 neutral 50/50 simulations.
+              </p>
+              <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${
+                antiM.mc_pct_rank >= 95
+                  ? "bg-green-50 border border-green-200"
+                  : antiM.mc_pct_rank <= 5
+                  ? "bg-red-50 border border-red-200"
+                  : "bg-slate-50 border border-slate-200"
+              }`}>
+                <div>
+                  {antiM.mc_pct_rank >= 95 ? (
+                    <>
+                      <span className="font-semibold text-green-800">H₁b supported. </span>
+                      <span className="text-green-700">
+                        The anti-Trump strategy sits in the top {(100 - antiM.mc_pct_rank).toFixed(1)}% of {mcBenchmark?.n_sims?.toLocaleString() ?? "10,000"} neutral simulations.
+                        Systematically betting against Trump captures the overpricing premium — consistent with crypto-bro buyers inflating pro-Trump prices above their true probability.
+                      </span>
+                    </>
+                  ) : antiM.mc_pct_rank <= 5 ? (
+                    <>
+                      <span className="font-semibold text-red-800">H₁a indicated. </span>
+                      <span className="text-red-700">
+                        Anti-Trump underperforms the neutral benchmark — pro-Trump outcomes are underpriced.
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-slate-700">H₀ not rejected. </span>
+                      <span className="text-slate-600">
+                        Anti-Trump returns fall within the typical range of neutral benchmark outcomes.
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Comparison equity sparkline */}
+          {antiEquity?.length > 0 && (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-4 uppercase tracking-wide">
+                Cumulative P&L — Full Timeline
+              </h2>
+              <p className="text-xs text-slate-400 mb-3">
+                Orange = anti-Trump strategy. Purple = pro-Trump for comparison. Dashed line marks 2026-01-26.
+              </p>
+              <EquitySpark proData={equityData} antiData={antiEquity} />
+            </Card>
+          )}
+
+          {/* Period comparison */}
+          {antiPeriods && (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                Retrospective vs Prospective
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">
+                Anti-Trump strategy — split at {PROSP_START}.
+              </p>
+              <PeriodTable periods={antiPeriods} />
+            </Card>
+          )}
+
+          {/* Statistical summary */}
+          <Card className="p-5">
+            <h2 className="text-sm font-semibold text-slate-700 mb-4 uppercase tracking-wide">
+              Statistical Summary (Prospective Clean Series)
+            </h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+              {[
+                {
+                  label: "Abnormal Return t-stat",
+                  stat: antiM.mean_daily_return != null && antiM.std_daily_return != null && antiM.T
+                    ? fmt(antiM.mean_daily_return / antiM.std_daily_return * Math.sqrt(antiM.T), 4)
+                    : "—",
+                  note: "H₀: E[AR] = 0 (primary)",
+                },
+                {
+                  label: "OLS Slope ($/day)",
+                  stat: antiM.T > 0 && antiM.final_pnl != null ? fmt(antiM.final_pnl / antiM.T, 4) : "—",
+                  note: "Trend direction",
+                },
+                {
+                  label: "Sharpe Ratio (ann.)",
+                  stat: fmt(antiM.sharpe_ann, 4),
+                  note: "√365 annualisation",
+                },
+                {
+                  label: "Sortino Ratio (ann.)",
+                  stat: fmt(antiM.sortino_ann, 4),
+                  note: "Downside-adjusted",
+                },
+              ].map(({ label, stat, note }) => (
+                <div key={label} className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 mb-1">{label}</p>
+                  <p className="text-lg font-bold text-slate-800">{stat}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{note}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-lg px-4 py-3 text-sm" style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" }}>
+              <span className="font-semibold">Anti-Trump interpretation: </span>
+              Flipping the strategy direction converts losses into gains. If anti-Trump significantly outperforms neutral,
+              this directly supports H₁b — politically motivated (crypto-bro) traders systematically overprice pro-Trump outcomes,
+              and the <em>informed</em> trade is to bet against them.
+            </div>
+          </Card>
+        </>
       )}
 
       {/* ── Monte Carlo tab ────────────────────────────────────────────── */}

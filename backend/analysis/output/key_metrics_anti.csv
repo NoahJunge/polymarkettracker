@@ -1,0 +1,17 @@
+metric,value
+label,CLEAN SERIES (ANTI-TRUMP)
+T,75
+mean_daily_return,0.000307
+std_daily_return,0.011019
+ann_return,0.111979
+sharpe_ann,0.531909
+sortino_ann,0.592357
+max_dd_usd,-429.56
+max_dd_pct,-2.291673
+calmar,4.886347
+var_95,0.016199
+cvar_95,0.022078
+final_pnl,287.541
+total_invested,18027.2835
+return_on_invested,1.595032
+mc_pct_rank,99.79
