@@ -39,6 +39,17 @@ FIGURE_META = [
     ("fig10_retro_vs_prosp.png",     "Retrospective vs Prospective",         "Period comparison (professor's suggested split)"),
     ("fig11_mc_benchmark.png",       "Neutral Benchmark Monte Carlo",        "10,000 random-direction simulations vs pro-Trump"),
     ("fig12_strategy_comparison.png", "Pro-Trump vs Anti-Trump vs Neutral",  "Both strategy equity curves overlaid with neutral Monte Carlo benchmark"),
+    # Anti-Trump figures
+    ("fig1_equity_curve_anti.png",         "Anti-Trump — Portfolio Value vs Invested",      "Full timeline with retrospective / prospective divider"),
+    ("fig2_daily_pnl_anti.png",            "Anti-Trump — Daily P&L Changes",                "Green = gained; red = lost"),
+    ("fig3_return_distribution_anti.png",  "Anti-Trump — Distribution of Daily Returns",    "Histogram with KDE and normal overlay"),
+    ("fig4_qq_plot_anti.png",              "Anti-Trump — Q-Q Plot",                         "Normality check"),
+    ("fig5_acf_pacf_anti.png",             "Anti-Trump — ACF / PACF",                       "Serial correlation test on daily returns"),
+    ("fig6_drawdown_anti.png",             "Anti-Trump — Portfolio Drawdown",               "Peak-to-trough decline (%)"),
+    ("fig8_mc_equity_comparison_anti.png", "Anti-Trump vs Neutral Benchmark — Equity Curve","Cumulative P&L: anti-Trump vs 10,000 random-direction simulations"),
+    ("fig9_rolling_sharpe_anti.png",       "Anti-Trump — Rolling 20-Day Sharpe Ratio",      "Risk-adjusted performance over time"),
+    ("fig10_retro_vs_prosp_anti.png",      "Anti-Trump — Retrospective vs Prospective",     "Period comparison"),
+    ("fig11_mc_benchmark_anti.png",        "Anti-Trump — Neutral Benchmark Monte Carlo",    "10,000 random-direction simulations vs anti-Trump"),
 ]
 
 SEED_PATH = Path(__file__).parent.parent / "seed_data" / "seed.xlsx"

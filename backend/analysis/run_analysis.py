@@ -852,7 +852,7 @@ def save_fig(fig, name):
     print(f"  Saved: {path.name}")
 
 
-def fig1_equity_curve(curve, prosp_start=None):
+def fig1_equity_curve(curve, prosp_start=None, filename="fig1_equity_curve.png", color=C_PRO, label="Pro-Trump"):
     """Fig 1: Portfolio value vs invested capital — full timeline with period divider."""
     fig, ax = plt.subplots(figsize=(13, 5))
     dates = curve["date"]
@@ -862,7 +862,7 @@ def fig1_equity_curve(curve, prosp_start=None):
     ax.fill_between(dates, pv, inv, where=(pv >= inv), alpha=0.25, color=C_GAIN, label="_gain area")
     ax.fill_between(dates, pv, inv, where=(pv <  inv), alpha=0.25, color=C_LOSS, label="_loss area")
     ax.plot(dates, inv, color=C_INV, linewidth=1.5, linestyle="--", label="Cumulative invested (cost basis)")
-    ax.plot(dates, pv,  color=C_PRO, linewidth=2.0, label="Portfolio value (mark-to-market)")
+    ax.plot(dates, pv,  color=color, linewidth=2.0, label="Portfolio value (mark-to-market)")
 
     # Period divider
     if prosp_start is not None:
@@ -883,13 +883,13 @@ def fig1_equity_curve(curve, prosp_start=None):
     end_yr   = curve["date"].max().strftime("%b %Y")
     style_ax(ax,
         title=f"Figure 1 — Portfolio Value vs Invested Capital\n"
-              f"Pro-Trump DCA Strategy (Polymarket, {start_yr} – {end_yr})",
+              f"{label} DCA Strategy (Polymarket, {start_yr} – {end_yr})",
         xlabel="Date", ylabel="USD")
     fig.tight_layout()
-    save_fig(fig, "fig1_equity_curve.png")
+    save_fig(fig, filename)
 
 
-def fig2_daily_pnl(curve):
+def fig2_daily_pnl(curve, filename="fig2_daily_pnl.png", color=C_PRO):
     """Fig 2: Daily P&L changes as a bar chart."""
     df = curve.dropna(subset=["daily_pnl_change"]).copy()
     fig, ax = plt.subplots(figsize=(11, 4))
@@ -897,7 +897,7 @@ def fig2_daily_pnl(curve):
     ax.bar(df["date"], df["daily_pnl_change"], color=colors, width=0.8, alpha=0.85)
     ax.axhline(y=0, color=C_TEXT, linewidth=0.8)
     mean_chg = df["daily_pnl_change"].mean()
-    ax.axhline(y=mean_chg, color=C_PRO, linewidth=1.2, linestyle="--",
+    ax.axhline(y=mean_chg, color=color, linewidth=1.2, linestyle="--",
                label=f"Mean daily change = ${mean_chg:.2f}")
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
@@ -908,22 +908,22 @@ def fig2_daily_pnl(curve):
         title="Figure 2 — Daily P&L Changes\nGreen = portfolio gained value; Red = portfolio lost value",
         xlabel="Date", ylabel="Daily P&L change (USD)")
     fig.tight_layout()
-    save_fig(fig, "fig2_daily_pnl.png")
+    save_fig(fig, filename)
 
 
-def fig3_return_distribution(curve):
+def fig3_return_distribution(curve, filename="fig3_return_distribution.png", color=C_PRO):
     """Fig 3: Return histogram + KDE + normal overlay."""
     r   = curve["daily_return"].dropna().values
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    n, bins, _ = ax.hist(r * 100, bins=25, color=C_PRO, alpha=0.55,
+    n, bins, _ = ax.hist(r * 100, bins=25, color=color, alpha=0.55,
                           edgecolor="white", linewidth=0.5, density=True, label="Observed returns")
 
     # KDE
     from scipy.stats import gaussian_kde
     kde    = gaussian_kde(r * 100, bw_method="scott")
     x_vals = np.linspace(r.min() * 100 - 0.5, r.max() * 100 + 0.5, 300)
-    ax.plot(x_vals, kde(x_vals), color=C_PRO, linewidth=2.0, label="KDE")
+    ax.plot(x_vals, kde(x_vals), color=color, linewidth=2.0, label="KDE")
 
     # Normal overlay
     mu, sigma = r.mean() * 100, r.std(ddof=1) * 100
@@ -952,15 +952,15 @@ def fig3_return_distribution(curve):
               "With KDE and normal distribution overlay",
         xlabel="Daily return (%)", ylabel="Density")
     fig.tight_layout()
-    save_fig(fig, "fig3_return_distribution.png")
+    save_fig(fig, filename)
 
 
-def fig4_qq_plot(curve):
+def fig4_qq_plot(curve, filename="fig4_qq_plot.png", color=C_PRO):
     """Fig 4: Q-Q plot vs standard normal."""
     r   = curve["daily_return"].dropna().values
     fig, ax = plt.subplots(figsize=(5.5, 5.5))
     (osm, osr), (slope, intercept, _) = probplot(r, dist="norm", plot=None)
-    ax.scatter(osm, osr, color=C_PRO, s=18, alpha=0.75, label="Observed quantiles")
+    ax.scatter(osm, osr, color=color, s=18, alpha=0.75, label="Observed quantiles")
     fit_line = slope * np.array([osm.min(), osm.max()]) + intercept
     ax.plot([osm.min(), osm.max()], fit_line, color=C_LOSS, linewidth=1.5,
             linestyle="--", label="Theoretical normal line")
@@ -970,16 +970,16 @@ def fig4_qq_plot(curve):
               "Points on the line indicate normality",
         xlabel="Theoretical quantiles", ylabel="Sample quantiles")
     fig.tight_layout()
-    save_fig(fig, "fig4_qq_plot.png")
+    save_fig(fig, filename)
 
 
-def fig5_acf_pacf(curve):
+def fig5_acf_pacf(curve, filename="fig5_acf_pacf.png", color=C_PRO):
     """Fig 5: ACF and PACF of daily returns."""
     from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
     r   = curve["daily_return"].dropna().values
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
-    plot_acf(r,  ax=ax1, lags=20, color=C_PRO, title="", zero=False)
-    plot_pacf(r, ax=ax2, lags=20, color=C_PRO, title="", zero=False, method="ywm")
+    plot_acf(r,  ax=ax1, lags=20, color=color, title="", zero=False)
+    plot_pacf(r, ax=ax2, lags=20, color=color, title="", zero=False, method="ywm")
     style_ax(ax1,
         title="Figure 5a — Autocorrelation Function (ACF)\n"
               "Blue region = 95% confidence band (no autocorrelation)",
@@ -989,10 +989,10 @@ def fig5_acf_pacf(curve):
               "Significant spikes indicate serial dependence",
         xlabel="Lag (days)", ylabel="Partial autocorrelation")
     fig.tight_layout()
-    save_fig(fig, "fig5_acf_pacf.png")
+    save_fig(fig, filename)
 
 
-def fig6_drawdown(curve):
+def fig6_drawdown(curve, filename="fig6_drawdown.png"):
     """Fig 6: Running drawdown from portfolio value peak."""
     fig, ax = plt.subplots(figsize=(11, 4))
     dd = curve["drawdown_pct"].values
@@ -1014,7 +1014,7 @@ def fig6_drawdown(curve):
         title="Figure 6 — Portfolio Drawdown\nPeak-to-trough decline in portfolio value (%)",
         xlabel="Date", ylabel="Drawdown (%)")
     fig.tight_layout()
-    save_fig(fig, "fig6_drawdown.png")
+    save_fig(fig, filename)
 
 
 def fig7_market_pnl(mkt_pnl, top_n=20):
@@ -1039,7 +1039,7 @@ def fig7_market_pnl(mkt_pnl, top_n=20):
     save_fig(fig, "fig7_market_pnl.png")
 
 
-def fig8_mc_equity_comparison(curve_full, pnl_sims_mc, date_range_mc, prosp_start=None):
+def fig8_mc_equity_comparison(curve_full, pnl_sims_mc, date_range_mc, prosp_start=None, filename="fig8_mc_equity_comparison.png", color=C_PRO, label="Pro-Trump"):
     """Fig 8: Pro-Trump cumulative P&L vs neutral benchmark fan (median + 5–95% band)."""
     T_mc  = pnl_sims_mc.shape[1]
     x_mc  = pd.to_datetime(list(date_range_mc)[:T_mc])
@@ -1057,9 +1057,9 @@ def fig8_mc_equity_comparison(curve_full, pnl_sims_mc, date_range_mc, prosp_star
     ax.fill_between(x_mc, p25_mc, p75_mc, color="#94a3b8", alpha=0.28, label="Neutral 25–75th pct")
     ax.plot(x_mc, p50_mc, color="#94a3b8", linewidth=1.5, linestyle="--", label="Neutral median")
 
-    # Pro-Trump actual
+    # Strategy actual
     ax.plot(curve_full["date"], curve_full["total_pnl"],
-            color=C_PRO, linewidth=2.2, label="Pro-Trump (actual)")
+            color=color, linewidth=2.2, label=f"{label} (actual)")
 
     # Zero line
     ax.axhline(y=0, color=C_TEXT, linewidth=0.8, linestyle=":")
@@ -1077,14 +1077,14 @@ def fig8_mc_equity_comparison(curve_full, pnl_sims_mc, date_range_mc, prosp_star
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
     ax.legend(fontsize=8, loc="upper left")
     style_ax(ax,
-             title="Figure 8 — Cumulative P&L: Pro-Trump vs Neutral Benchmark\n"
+             title=f"Figure 8 — Cumulative P&L: {label} vs Neutral Benchmark\n"
                    "Shaded bands = 10,000 random-direction simulations",
              xlabel="Date", ylabel="Cumulative P&L (USD)")
     fig.tight_layout()
-    save_fig(fig, "fig8_mc_equity_comparison.png")
+    save_fig(fig, filename)
 
 
-def fig9_rolling_sharpe(curve, window=20):
+def fig9_rolling_sharpe(curve, window=20, filename="fig9_rolling_sharpe.png", color=C_PRO):
     """Fig 9: Rolling Sharpe ratio (annualised)."""
     r    = curve["daily_return"]
     roll = r.rolling(window)
@@ -1095,7 +1095,7 @@ def fig9_rolling_sharpe(curve, window=20):
                     where=(rolling_sharpe >= 0), alpha=0.3, color=C_GAIN)
     ax.fill_between(curve["date"], rolling_sharpe, 0,
                     where=(rolling_sharpe < 0),  alpha=0.3, color=C_LOSS)
-    ax.plot(curve["date"], rolling_sharpe, color=C_PRO, linewidth=1.8,
+    ax.plot(curve["date"], rolling_sharpe, color=color, linewidth=1.8,
             label=f"{window}-day rolling Sharpe (annualised)")
     ax.axhline(y=0,   color=C_TEXT, linewidth=0.8, linestyle=":")
     ax.axhline(y=1.0, color=C_GAIN, linewidth=0.8, linestyle="--", alpha=0.6, label="Sharpe = 1.0 (benchmark)")
@@ -1109,7 +1109,7 @@ def fig9_rolling_sharpe(curve, window=20):
               "Positive = strategy is generating risk-adjusted gains in that window",
         xlabel="Date", ylabel="Sharpe ratio (annualised)")
     fig.tight_layout()
-    save_fig(fig, "fig9_rolling_sharpe.png")
+    save_fig(fig, filename)
 
 
 # ── SECTION 9 — RETROSPECTIVE vs PROSPECTIVE ─────────────────────────────────
@@ -1259,13 +1259,13 @@ def print_retro_prosp_comparison(curve_retro, curve_prosp_full, curve_prosp_clea
     print()
 
 
-def fig10_retro_vs_prosp(curve_retro, curve_prosp):
+def fig10_retro_vs_prosp(curve_retro, curve_prosp, filename="fig10_retro_vs_prosp.png", color=C_PRO):
     """Fig 10: Retrospective vs prospective equity curves side-by-side."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     for ax, curve, title_period, color_period in [
         (axes[0], curve_retro,  "Retrospective (CLOB historical)", C_INV),
-        (axes[1], curve_prosp,  "Prospective (live collection)",   C_PRO),
+        (axes[1], curve_prosp,  "Prospective (live collection)",   color),
     ]:
         dates = curve["date"]
         pv    = curve["portfolio_value"]
@@ -1286,33 +1286,35 @@ def fig10_retro_vs_prosp(curve_retro, curve_prosp):
     fig.suptitle("Figure 10 — Retrospective vs Prospective Portfolio Performance",
                  fontsize=12, fontweight="bold", y=1.02)
     fig.tight_layout()
-    save_fig(fig, "fig10_retro_vs_prosp.png")
+    save_fig(fig, filename)
 
 
-def fig11_mc_benchmark(mean_return_sims, dr_sims, r_protrump, date_range_mc, pct_rank_mc):
+def fig11_mc_benchmark(mean_return_sims, dr_sims, r_strategy, date_range_mc, pct_rank_mc,
+                       filename="fig11_mc_benchmark.png", color=C_PRO, label="Pro-Trump"):
     """Fig 11: Neutral MC benchmark — histogram of simulation means + daily fan chart."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
     # Panel A — histogram of MC mean returns
     vals     = mean_return_sims * 100
-    pro_mean = float(r_protrump.mean() * 100)
+    strat_mean = float(r_strategy.mean() * 100)
 
     n, bin_edges, _ = ax1.hist(vals, bins=60, color="#94a3b8", alpha=0.75,
                                 edgecolor="white", linewidth=0.3,
                                 label=f"Neutral benchmark ({len(vals):,} sims)")
-    # Re-shade the tail more extreme than pro-Trump
-    lo_mask = vals <= pro_mean
-    ax1.hist(vals[lo_mask], bins=bin_edges, color=C_LOSS, alpha=0.55,
-             edgecolor="white", linewidth=0.3, label="Below pro-Trump")
-    ax1.axvline(x=pro_mean, color=C_PRO, linewidth=2.2, linestyle="--",
-                label=f"Pro-Trump mean: {pro_mean:.4f}%")
+    lo_mask = vals <= strat_mean
+    shade_color = C_LOSS if pct_rank_mc <= 50 else C_GAIN
+    shade_label = f"Below {label}" if pct_rank_mc <= 50 else f"Above {label}"
+    ax1.hist(vals[lo_mask], bins=bin_edges, color=shade_color, alpha=0.55,
+             edgecolor="white", linewidth=0.3, label=shade_label)
+    ax1.axvline(x=strat_mean, color=color, linewidth=2.2, linestyle="--",
+                label=f"{label} mean: {strat_mean:.4f}%")
     y_top = ax1.get_ylim()[1]
-    ax1.text(pro_mean + (bin_edges[-1] - bin_edges[0]) * 0.01, y_top * 0.92,
-             f"{pct_rank_mc:.1f}th\npercentile", fontsize=8.5, color=C_PRO, va="top")
+    ax1.text(strat_mean + (bin_edges[-1] - bin_edges[0]) * 0.01, y_top * 0.92,
+             f"{pct_rank_mc:.1f}th\npercentile", fontsize=8.5, color=color, va="top")
     ax1.legend(fontsize=8)
     style_ax(ax1,
-        title="Figure 11a — Neutral Benchmark Distribution\n"
-              "10,000 random-direction simulations vs actual pro-Trump strategy",
+        title=f"Figure 11a — Neutral Benchmark Distribution\n"
+              f"10,000 random-direction simulations vs actual {label} strategy",
         xlabel="Mean daily return (%)", ylabel="Count")
 
     # Panel B — fan chart of daily returns over time
@@ -1330,20 +1332,19 @@ def fig11_mc_benchmark(mean_return_sims, dr_sims, r_protrump, date_range_mc, pct
     ax2.fill_between(x, p25, p75, color="#94a3b8", alpha=0.40, label="MC 25–75%")
     ax2.plot(x, p50, color="#64748b", linewidth=1.2, linestyle="--", label="MC median")
 
-    # Align pro-Trump series to the same x axis (tail T values)
-    ax2.plot(x[-len(r_protrump):], r_protrump * 100,
-             color=C_PRO, linewidth=1.8, label="Pro-Trump actual")
+    ax2.plot(x[-len(r_strategy):], r_strategy * 100,
+             color=color, linewidth=1.8, label=f"{label} actual")
     ax2.axhline(y=0, color=C_TEXT, linewidth=0.6, linestyle=":")
     ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
     ax2.xaxis.set_major_locator(mdates.MonthLocator())
     plt.setp(ax2.xaxis.get_majorticklabels(), rotation=30, ha="right")
     ax2.legend(fontsize=8)
     style_ax(ax2,
-        title="Figure 11b — Daily Returns: Pro-Trump vs Neutral Fan Chart",
+        title=f"Figure 11b — Daily Returns: {label} vs Neutral Fan Chart",
         xlabel="Date", ylabel="Daily return (%)")
 
     fig.tight_layout()
-    save_fig(fig, "fig11_mc_benchmark.png")
+    save_fig(fig, filename)
 
 
 def fig12_strategy_comparison(curve_pro, curve_anti, pnl_sims_mc, date_range):
@@ -1513,6 +1514,26 @@ def main():
         fig10_retro_vs_prosp(curve_retro, curve_prosp)
     fig11_mc_benchmark(mean_sims, dr_sims, r_protrump, mc_date_range, pct_rank_mc)
     fig12_strategy_comparison(curve_full, curve_full_anti, pnl_sims_mc, mc_date_range)
+
+    # Anti-Trump figures
+    fig1_equity_curve(curve_full_anti, prosp_start=PROSPECTIVE_START,
+                      filename="fig1_equity_curve_anti.png", color=C_ANTI, label="Anti-Trump")
+    fig2_daily_pnl(curve_clean_anti,   filename="fig2_daily_pnl_anti.png",           color=C_ANTI)
+    fig3_return_distribution(curve_clean_anti, filename="fig3_return_distribution_anti.png", color=C_ANTI)
+    fig4_qq_plot(curve_clean_anti,     filename="fig4_qq_plot_anti.png",              color=C_ANTI)
+    fig5_acf_pacf(curve_clean_anti,    filename="fig5_acf_pacf_anti.png",             color=C_ANTI)
+    fig6_drawdown(curve_clean_anti,    filename="fig6_drawdown_anti.png")
+    fig8_mc_equity_comparison(curve_full_anti, pnl_sims_mc, mc_date_range,
+                              prosp_start=PROSPECTIVE_START,
+                              filename="fig8_mc_equity_comparison_anti.png",
+                              color=C_ANTI, label="Anti-Trump")
+    fig9_rolling_sharpe(curve_clean_anti, filename="fig9_rolling_sharpe_anti.png",    color=C_ANTI)
+    if len(curve_retro_anti) > 5:
+        fig10_retro_vs_prosp(curve_retro_anti, curve_prosp_anti,
+                             filename="fig10_retro_vs_prosp_anti.png",               color=C_ANTI)
+    fig11_mc_benchmark(mean_sims, dr_sims, r_anti, mc_date_range, pct_rank_mc_anti,
+                       filename="fig11_mc_benchmark_anti.png",
+                       color=C_ANTI, label="Anti-Trump")
 
     # ── Export ────────────────────────────────────────────────────────────────
     section("SECTION 8 — EXPORTING DATA")

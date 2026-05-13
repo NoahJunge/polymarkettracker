@@ -786,18 +786,25 @@ export default function Analysis() {
         </>
       )}
 
-      {/* Figures gallery */}
-      {activeTab === "pro" && figures.some((f) => f.exists) && (
+      {/* Figures gallery — Pro-Trump tab (exclude _anti figures) */}
+      {activeTab === "pro" && figures.some((f) => f.exists && !f.filename.includes("_anti")) && (
         <div>
-          <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
-            Figures ({figures.filter((f) => f.exists).length} / {figures.length})
-            <span className="ml-2 text-slate-400 font-normal normal-case">click to enlarge</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {figures.map((fig) => (
-              <FigureCard key={fig.filename} fig={fig} />
-            ))}
-          </div>
+          {(() => {
+            const proFigs = figures.filter((f) => !f.filename.includes("_anti"));
+            return (
+              <>
+                <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+                  Figures ({proFigs.filter((f) => f.exists).length} / {proFigs.length})
+                  <span className="ml-2 text-slate-400 font-normal normal-case">click to enlarge</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {proFigs.map((fig) => (
+                    <FigureCard key={fig.filename} fig={fig} />
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -1023,6 +1030,25 @@ export default function Analysis() {
               and the <em>informed</em> trade is to bet against them.
             </div>
           </Card>
+
+          {/* Anti-Trump figures gallery */}
+          {(() => {
+            const antiFigs = figures.filter((f) => f.filename.includes("_anti") || f.filename === "fig12_strategy_comparison.png");
+            if (!antiFigs.some((f) => f.exists)) return null;
+            return (
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+                  Figures ({antiFigs.filter((f) => f.exists).length} / {antiFigs.length})
+                  <span className="ml-2 text-slate-400 font-normal normal-case">click to enlarge</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {antiFigs.map((fig) => (
+                    <FigureCard key={fig.filename} fig={fig} />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
