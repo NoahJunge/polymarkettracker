@@ -61,6 +61,7 @@ OUTPUT_DIR         = Path(__file__).parent / "output"
 FIGURES_DIR        = OUTPUT_DIR / "figures"
 PROSPECTIVE_START  = "2026-01-26"   # date live collection began
 CLEAN_START        = "2026-02-22"   # reliable continuous prospective coverage
+EXPERIMENT_END     = "2026-05-01"   # experiment closed — all curves capped here
 FIGURE_DPI         = 300
 ALPHA              = 0.05           # significance level
 
@@ -1447,11 +1448,16 @@ def main():
 
     # ── Build equity curves ───────────────────────────────────────────────────
     print("\n  Building equity curves …")
-    curve_full  = build_equity_curve(dca, price_lookup)
-    curve_full_anti = build_equity_curve(dca, price_lookup, flip_sides=True)
-
+    END_DT    = pd.to_datetime(EXPERIMENT_END)
     PROSP_DT  = pd.to_datetime(PROSPECTIVE_START)
     CLEAN_DT  = pd.to_datetime(CLEAN_START)
+
+    curve_full_raw  = build_equity_curve(dca, price_lookup)
+    curve_full_anti_raw = build_equity_curve(dca, price_lookup, flip_sides=True)
+
+    # Cap everything at the experiment end date
+    curve_full      = curve_full_raw[curve_full_raw["date"] <= END_DT].copy().reset_index(drop=True)
+    curve_full_anti = curve_full_anti_raw[curve_full_anti_raw["date"] <= END_DT].copy().reset_index(drop=True)
 
     curve_retro = curve_full[curve_full["date"] <  PROSP_DT].copy().reset_index(drop=True)
     curve_prosp = curve_full[curve_full["date"] >= PROSP_DT].copy().reset_index(drop=True)

@@ -8,3 +8,6 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 EXPORT_DIR = os.getenv("EXPORT_DIR", "/exports")
+
+# Experiment closed on this date — all equity curves and stats are capped here.
+EXPERIMENT_END_DATE = "2026-05-01"

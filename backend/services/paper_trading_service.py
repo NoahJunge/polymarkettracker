@@ -7,6 +7,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from config import EXPERIMENT_END_DATE
 from core.es_client import ESClient
 from models.paper_trade import (
     OpenTradeRequest,
@@ -162,24 +163,35 @@ class PaperTradingService:
         return result
 
     async def get_portfolio_summary(self) -> PortfolioSummary:
-        """Compute total portfolio summary."""
-        positions = await self.get_open_positions()
+        """Compute portfolio summary as of EXPERIMENT_END_DATE."""
         all_trades = await self._get_all_trades()
 
-        total_unrealized = sum(p.unrealized_pnl for p in positions)
-        total_equity = sum(p.market_value for p in positions)
-        total_cost = sum(p.net_quantity * p.avg_entry_price for p in positions)
+        # Derive P&L from the capped equity curve so numbers are consistent with charts
+        curve_resp = await self.get_equity_curve()
+        if curve_resp.curve:
+            last = curve_resp.curve[-1]
+            total_equity = last.portfolio_value
+            total_unrealized = last.unrealized_pnl
+            total_cost = last.cumulative_invested
+            realized_pnl = last.realized_pnl
+        else:
+            total_equity = total_unrealized = total_cost = realized_pnl = 0.0
 
-        # Realized P&L: sum of (close_price - avg_open_price) * close_quantity for each closed portion
-        realized_pnl = await self._compute_realized_pnl(all_trades)
+        # Count subscriptions that were open at experiment end
+        trades_capped = [t for t in all_trades if t["created_at_utc"][:10] <= EXPERIMENT_END_DATE]
+        open_markets = len(set(
+            t["market_id"] for t in trades_capped if t["action"] == "OPEN"
+        ) - set(
+            t["market_id"] for t in trades_capped if t["action"] == "CLOSE"
+        ))
 
         return PortfolioSummary(
             total_equity=round(total_equity, 4),
             total_cost_basis=round(total_cost, 4),
             total_unrealized_pnl=round(total_unrealized, 4),
             total_realized_pnl=round(realized_pnl, 4),
-            open_position_count=len(positions),
-            total_trades=len(all_trades),
+            open_position_count=open_markets,
+            total_trades=len(trades_capped),
         )
 
     async def generate_gain_chart(self) -> bytes:
@@ -456,17 +468,21 @@ class PaperTradingService:
         import asyncio
         from datetime import date as date_cls, timedelta
 
-        trades = await self._get_all_trades()
+        all_trades = await self._get_all_trades()
+        if not all_trades:
+            return all_trades, {}
+
+        # Cap all data at the experiment end date
+        trades = [t for t in all_trades if t["created_at_utc"][:10] <= EXPERIMENT_END_DATE]
         if not trades:
             return trades, {}
 
         market_ids = list(set(t["market_id"] for t in trades))
 
-        # Determine date range: first trade date → today
+        # Determine date range: first trade date → experiment end
         first_date = trades[0]["created_at_utc"][:10]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         start = date_cls.fromisoformat(first_date)
-        end = date_cls.fromisoformat(today)
+        end = date_cls.fromisoformat(EXPERIMENT_END_DATE)
         dates: list[str] = []
         d = start
         while d <= end:
