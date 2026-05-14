@@ -99,23 +99,51 @@ class PaperTradingService:
         return trade
 
     async def get_open_positions(self) -> list[Position]:
-        """Compute current open positions with mark-to-market values."""
-        positions_data = await self._aggregate_positions()
+        """Compute open positions as of EXPERIMENT_END_DATE with prices as of that date."""
+        # Cap trades at experiment end so positions reflect the closed experiment
+        all_trades = await self._get_all_trades()
+        trades_capped = [t for t in all_trades if t["created_at_utc"][:10] <= EXPERIMENT_END_DATE]
 
-        # Filter to positions with net quantity > 0
-        open_positions = {
-            k: v for k, v in positions_data.items() if v["net_quantity"] > 0
-        }
+        positions_raw: dict[tuple[str, str], dict] = defaultdict(
+            lambda: {"open_quantity": 0.0, "open_cost": 0.0, "close_quantity": 0.0, "last_trade_date": ""}
+        )
+        for t in trades_capped:
+            key = (t["market_id"], t["side"])
+            qty = float(t["quantity"])
+            price = float(t["price"])
+            if t["action"] == "OPEN":
+                positions_raw[key]["open_quantity"] += qty
+                positions_raw[key]["open_cost"] += qty * price
+            elif t["action"] == "CLOSE":
+                positions_raw[key]["close_quantity"] += qty
+            trade_date = t.get("created_at_utc", "")[:10]
+            if trade_date > positions_raw[key]["last_trade_date"]:
+                positions_raw[key]["last_trade_date"] = trade_date
+
+        open_positions = {}
+        for key, pos in positions_raw.items():
+            net_qty = pos["open_quantity"] - pos["close_quantity"]
+            if net_qty > 0:
+                avg_entry = pos["open_cost"] / pos["open_quantity"] if pos["open_quantity"] > 0 else 0.0
+                open_positions[key] = {
+                    "net_quantity": net_qty,
+                    "avg_entry_price": avg_entry,
+                    "last_trade_date": pos["last_trade_date"],
+                }
+
         if not open_positions:
             return []
 
         # Batch fetch: all unique market_ids
         market_ids = list(set(mid for mid, _ in open_positions.keys()))
 
-        # One query: latest snapshot per market using collapse
+        # Latest snapshot per market on or before experiment end date
         snap_result = await self.es.search(
             SNAPSHOTS_INDEX,
-            query={"terms": {"market_id": market_ids}},
+            query={"bool": {"must": [
+                {"terms": {"market_id": market_ids}},
+                {"range": {"timestamp_utc": {"lte": EXPERIMENT_END_DATE + "T23:59:59Z"}}},
+            ]}},
             sort=[{"timestamp_utc": {"order": "desc"}}],
             size=len(market_ids),
             collapse="market_id",
@@ -307,10 +335,10 @@ class PaperTradingService:
         return buf.read()
 
     async def get_all_trades(self) -> list[dict]:
-        """Get all paper trades, newest first, enriched with market questions."""
+        """Get all paper trades up to EXPERIMENT_END_DATE, newest first, enriched with market questions."""
         result = await self.es.search(
             PAPER_TRADES_INDEX,
-            query={"match_all": {}},
+            query={"range": {"created_at_utc": {"lte": EXPERIMENT_END_DATE + "T23:59:59Z"}}},
             sort=[{"created_at_utc": {"order": "desc"}}],
             size=10000,
         )

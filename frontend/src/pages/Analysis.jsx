@@ -527,6 +527,14 @@ export default function Analysis() {
         </div>
       </div>
 
+      {/* Experiment closed banner */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
+          Data as of 1 May 2026 — experiment closed
+        </span>
+        <span className="text-xs text-slate-400">287-day full series · 69-day clean series (from 22 Feb 2026)</span>
+      </div>
+
       {/* Tab switcher */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
         {[["pro", "Pro-Trump"], ["anti", "Anti-Trump"], ["montecarlo", "Monte Carlo"]].map(([id, label]) => (

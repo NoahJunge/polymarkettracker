@@ -58,8 +58,12 @@ SEED_PATH = Path(__file__).parent.parent / "seed_data" / "seed.xlsx"
 _mc_cache: dict = {}
 
 
+EXPERIMENT_END = "2026-05-01"
+
+
 def _get_mc_data():
-    """Load + cache per-market P&L matrices. Reloads only when seed.xlsx changes."""
+    """Load + cache per-market P&L matrices capped at EXPERIMENT_END. Reloads only when seed.xlsx changes."""
+    import pandas as pd
     import run_analysis as ra  # noqa: PLC0415
 
     mtime = SEED_PATH.stat().st_mtime if SEED_PATH.exists() else None
@@ -67,8 +71,17 @@ def _get_mc_data():
         return _mc_cache
 
     dca, snaps, _subs, _mkts = ra.load_data()
+
+    # Cap all data at experiment end date so interactive MC matches the analysis figures
+    end_dt = pd.to_datetime(EXPERIMENT_END).date()
+    dca   = dca[dca["date"]   <= end_dt].copy()
+    snaps = snaps[snaps["date"] <= end_dt].copy()
+
     _, price_lookup = ra.build_price_table(snaps)
-    curve_full = ra.build_equity_curve(dca, price_lookup)
+    curve_full_raw = ra.build_equity_curve(dca, price_lookup)
+    end_pd = pd.to_datetime(EXPERIMENT_END)
+    curve_full = curve_full_raw[curve_full_raw["date"] <= end_pd].copy().reset_index(drop=True)
+
     markets, date_range, yes_pnl, no_pnl, yes_cost, no_cost = \
         ra.build_per_market_pnl_curves(dca, price_lookup)
 
