@@ -25,6 +25,7 @@ router = APIRouter()
 OUTPUT_DIR  = Path("/app/analysis/output")
 FIGURES_DIR = OUTPUT_DIR / "figures"
 PROSP_START = "2026-01-26"
+CLEAN_START = "2026-02-22"
 
 FIGURE_META = [
     ("fig1_equity_curve.png",        "Portfolio Value vs Invested Capital",  "Full timeline with retrospective / prospective divider"),
@@ -194,16 +195,18 @@ async def get_metrics():
         df["date"] = pd.to_datetime(df["date"])
         retro = df[df["date"] <  PROSP_START].copy()
         prosp = df[df["date"] >= PROSP_START].copy()
+        clean = df[df["date"] >= CLEAN_START].copy()
 
-        def _stats(sub, label):
+        def _stats(sub, label, primary=False):
             if sub.empty:
-                return {"label": label, "days": 0}
+                return {"label": label, "days": 0, "primary": primary}
             r    = sub["daily_return"].dropna()
             last = sub.iloc[-1]
             inv  = float(last["invested"])
             pnl  = float(last["total_pnl"])
             return {
                 "label":        label,
+                "primary":      primary,
                 "days":         len(sub),
                 "n_returns":    int(len(r)),
                 "mean_return":  round(float(r.mean()), 6) if len(r) else None,
@@ -217,7 +220,8 @@ async def get_metrics():
 
         result["periods"] = {
             "retrospective": _stats(retro, "Retrospective"),
-            "prospective":   _stats(prosp, "Prospective"),
+            "prospective":   _stats(prosp, "Prospective (full)"),
+            "clean":         _stats(clean, "Prospective (clean)", primary=True),
             "full":          _stats(df,    "Full Series"),
         }
 
@@ -247,6 +251,7 @@ async def get_metrics():
         adf["date"] = pd.to_datetime(adf["date"])
         retro_a = adf[adf["date"] <  PROSP_START].copy()
         prosp_a = adf[adf["date"] >= PROSP_START].copy()
+        clean_a = adf[adf["date"] >= CLEAN_START].copy()
         result["anti_equity_series"] = (
             adf[["date", "total_pnl", "portfolio_value", "invested"]]
             .assign(date=adf["date"].dt.strftime("%Y-%m-%d"))
@@ -254,7 +259,8 @@ async def get_metrics():
         )
         result["anti_periods"] = {
             "retrospective": _stats(retro_a, "Retrospective"),
-            "prospective":   _stats(prosp_a, "Prospective"),
+            "prospective":   _stats(prosp_a, "Prospective (full)"),
+            "clean":         _stats(clean_a, "Prospective (clean)", primary=True),
             "full":          _stats(adf,     "Full Series"),
         }
 

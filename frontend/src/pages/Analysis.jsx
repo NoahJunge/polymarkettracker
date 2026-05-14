@@ -120,6 +120,7 @@ function PeriodTable({ periods }) {
   const rows = [
     periods.retrospective,
     periods.prospective,
+    periods.clean,
     periods.full,
   ].filter(Boolean);
 
@@ -146,8 +147,16 @@ function PeriodTable({ periods }) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.label} className="border-b border-slate-100 last:border-0">
-                <td className="py-2.5 pr-4 font-medium text-slate-700">{row.label}</td>
+              <tr
+                key={row.label}
+                className={`border-b border-slate-100 last:border-0 ${row.primary ? "bg-violet-50" : ""}`}
+              >
+                <td className="py-2.5 pr-4 font-medium text-slate-700">
+                  {row.label}
+                  {row.primary && (
+                    <span className="ml-2 text-xs font-semibold px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded">primary</span>
+                  )}
+                </td>
                 <td className="py-2.5 px-3 text-right text-slate-600">{row.days}</td>
                 <td className="py-2.5 px-3 text-right font-mono text-xs">
                   <span style={{ color: row.mean_return >= 0 ? C_GAIN : C_LOSS }}>
