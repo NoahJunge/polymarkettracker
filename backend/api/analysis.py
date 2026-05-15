@@ -46,7 +46,7 @@ FIGURE_META = [
     ("fig3_return_distribution_anti.png",  "Anti-Trump — Distribution of Daily Returns",    "Histogram with KDE and normal overlay"),
     ("fig4_qq_plot_anti.png",              "Anti-Trump — Q-Q Plot",                         "Normality check"),
     ("fig5_acf_pacf_anti.png",             "Anti-Trump — ACF / PACF",                       "Serial correlation test on daily returns"),
-    ("fig6_drawdown_anti.png",             "Anti-Trump — Portfolio Drawdown",               "Peak-to-trough decline (%)"),
+    # fig6_drawdown_anti removed (redundant chart)
     ("fig8_mc_equity_comparison_anti.png", "Anti-Trump vs Neutral Benchmark — Equity Curve","Cumulative P&L: anti-Trump vs 10,000 random-direction simulations"),
     ("fig9_rolling_sharpe_anti.png",       "Anti-Trump — Rolling 20-Day Sharpe Ratio",      "Risk-adjusted performance over time"),
     ("fig10_retro_vs_prosp_anti.png",      "Anti-Trump — Retrospective vs Prospective",     "Period comparison"),
@@ -157,86 +157,12 @@ async def get_metrics():
 
     result = {"metrics": metrics}
 
-    # MC neutral benchmark summary
-    mc_path = OUTPUT_DIR / "mc_neutral_means.csv"
-    ar_path = OUTPUT_DIR / "abnormal_returns.csv"
-    if mc_path.exists():
-        mc_df = pd.read_csv(mc_path)
-        sims  = mc_df["mean_return_sim"].values
-        result["mc_benchmark"] = {
-            "n_sims":    int(len(sims)),
-            "mc_mean":   round(float(sims.mean()), 8),
-            "mc_std":    round(float(sims.std()),  8),
-            "mc_p5":     round(float(sims.quantile(0.05) if hasattr(sims, "quantile") else __import__("numpy").percentile(sims, 5)), 8),
-            "mc_p95":    round(float(sims.quantile(0.95) if hasattr(sims, "quantile") else __import__("numpy").percentile(sims, 95)), 8),
-            "pct_rank":  round(float(metrics.get("mc_pct_rank", 0)), 2),
-        }
-    if ar_path.exists():
-        ar_df = pd.read_csv(ar_path)
-        result["abnormal_returns_series"] = ar_df[["ar", "r_protrump", "r_neutral_mean"]].to_dict("records")
-
-    if mkt_pnl_path.exists():
-        mkt = pd.read_csv(mkt_pnl_path)
-        gross_gain = mkt.loc[mkt["unrealised_pnl"] > 0, "unrealised_pnl"].sum()
-        gross_loss = abs(mkt.loc[mkt["unrealised_pnl"] < 0, "unrealised_pnl"].sum())
-        result["market_summary"] = {
-            "total":        int(len(mkt)),
-            "positive":     int((mkt["unrealised_pnl"] > 0).sum()),
-            "negative":     int((mkt["unrealised_pnl"] < 0).sum()),
-            "win_rate":     round(float((mkt["unrealised_pnl"] > 0).mean() * 100), 1),
-            "total_pnl":    round(float(mkt["unrealised_pnl"].sum()), 4),
-            "gross_gain":   round(float(gross_gain), 4),
-            "gross_loss":   round(float(gross_loss), 4),
-            "profit_factor": round(float(gross_gain / gross_loss), 4) if gross_loss > 0 else None,
-        }
-
-    if equity_full.exists():
-        df = pd.read_csv(equity_full)
-        df["date"] = pd.to_datetime(df["date"])
-        retro = df[df["date"] <  PROSP_START].copy()
-        prosp = df[df["date"] >= PROSP_START].copy()
-        clean = df[df["date"] >= CLEAN_START].copy()
-
-        def _stats(sub, label, primary=False):
-            if sub.empty:
-                return {"label": label, "days": 0, "primary": primary}
-            r    = sub["daily_return"].dropna()
-            last = sub.iloc[-1]
-            inv  = float(last["invested"])
-            pnl  = float(last["total_pnl"])
-            return {
-                "label":        label,
-                "primary":      primary,
-                "days":         len(sub),
-                "n_returns":    int(len(r)),
-                "mean_return":  round(float(r.mean()), 6) if len(r) else None,
-                "std_return":   round(float(r.std(ddof=1)), 6) if len(r) > 1 else None,
-                "final_pnl":    round(pnl, 4),
-                "invested":     round(inv, 4),
-                "return_pct":   round(pnl / inv * 100, 2) if inv > 0 else 0,
-                "date_start":   sub["date"].min().strftime("%Y-%m-%d"),
-                "date_end":     sub["date"].max().strftime("%Y-%m-%d"),
-            }
-
-        result["periods"] = {
-            "retrospective": _stats(retro, "Retrospective"),
-            "prospective":   _stats(prosp, "Prospective (full)"),
-            "clean":         _stats(clean, "Prospective (clean)", primary=True),
-            "full":          _stats(df,    "Full Series"),
-        }
-
-        # Equity curve for sparkline (daily pnl, both periods)
-        result["equity_series"] = df[["date", "total_pnl", "portfolio_value", "invested"]].assign(
-            date=df["date"].dt.strftime("%Y-%m-%d")
-        ).to_dict("records")
-
-    # Anti-Trump metrics and equity series
+    # ── Anti-Trump metrics (loaded early — needed for mc_benchmark histogram) ──
     anti_metrics_path = OUTPUT_DIR / "key_metrics_anti.csv"
     anti_equity_path  = OUTPUT_DIR / "equity_curve_full_anti.csv"
-
+    anti_m: dict = {}
     if anti_metrics_path.exists():
         anti_df = pd.read_csv(anti_metrics_path)
-        anti_m: dict = {}
         for _, row in anti_df.iterrows():
             val = row["value"]
             try:
@@ -246,22 +172,117 @@ async def get_metrics():
             anti_m[row["metric"]] = val
         result["anti_metrics"] = anti_m
 
+    # ── MC neutral benchmark summary ──────────────────────────────────────────
+    mc_path = OUTPUT_DIR / "mc_neutral_means.csv"
+    ar_path = OUTPUT_DIR / "abnormal_returns.csv"
+    if mc_path.exists():
+        mc_df = pd.read_csv(mc_path)
+        sims  = mc_df["mean_return_sim"].values
+        # Build histogram (60 bins, x values in % for display)
+        counts, edges = np.histogram(sims * 100, bins=60)
+        mc_histogram = [
+            {"x": round(float((lo + hi) / 2), 5), "count": int(cnt)}
+            for cnt, lo, hi in zip(counts, edges[:-1], edges[1:])
+        ]
+        result["mc_benchmark"] = {
+            "n_sims":        int(len(sims)),
+            "mc_mean":       round(float(sims.mean()), 8),
+            "mc_std":        round(float(sims.std()),  8),
+            "mc_p5":         round(float(np.percentile(sims, 5)),  8),
+            "mc_p95":        round(float(np.percentile(sims, 95)), 8),
+            "pct_rank":      round(float(metrics.get("mc_pct_rank", 0)), 2),
+            "histogram":     mc_histogram,
+            # Mean returns in % for reference lines on histogram
+            "pro_mean_pct":  round(float(metrics.get("mean_daily_return", 0)) * 100, 6),
+            "anti_mean_pct": round(float(anti_m.get("mean_daily_return", 0)) * 100, 6),
+            "anti_pct_rank": round(float(anti_m.get("mc_pct_rank", 100)), 2),
+        }
+    if ar_path.exists():
+        ar_df = pd.read_csv(ar_path)
+        result["abnormal_returns_series"] = ar_df[["ar", "r_protrump", "r_neutral_mean"]].to_dict("records")
+
+    # ── Market-level P&L summary ──────────────────────────────────────────────
+    if mkt_pnl_path.exists():
+        mkt = pd.read_csv(mkt_pnl_path)
+        gross_gain = mkt.loc[mkt["unrealised_pnl"] > 0, "unrealised_pnl"].sum()
+        gross_loss = abs(mkt.loc[mkt["unrealised_pnl"] < 0, "unrealised_pnl"].sum())
+        result["market_summary"] = {
+            "total":         int(len(mkt)),
+            "positive":      int((mkt["unrealised_pnl"] > 0).sum()),
+            "negative":      int((mkt["unrealised_pnl"] < 0).sum()),
+            "win_rate":      round(float((mkt["unrealised_pnl"] > 0).mean() * 100), 1),
+            "total_pnl":     round(float(mkt["unrealised_pnl"].sum()), 4),
+            "gross_gain":    round(float(gross_gain), 4),
+            "gross_loss":    round(float(gross_loss), 4),
+            "profit_factor": round(float(gross_gain / gross_loss), 4) if gross_loss > 0 else None,
+        }
+
+    # ── Period comparison (delta invested / delta P&L per period) ─────────────
+    if equity_full.exists():
+        df = pd.read_csv(equity_full)
+        df["date"] = pd.to_datetime(df["date"])
+        retro = df[df["date"] <  PROSP_START].copy()
+        prosp = df[df["date"] >= PROSP_START].copy()
+
+        def _stats(sub, label, primary=False, initial_invested=0.0, initial_pnl=0.0):
+            """Return period-specific stats. invested/final_pnl are deltas from initial values."""
+            if sub.empty:
+                return {"label": label, "days": 0, "primary": primary}
+            r    = sub["daily_return"].dropna()
+            last = sub.iloc[-1]
+            period_inv = float(last["invested"]) - initial_invested
+            period_pnl = float(last["total_pnl"]) - initial_pnl
+            return {
+                "label":       label,
+                "primary":     primary,
+                "days":        len(sub),
+                "n_returns":   int(len(r)),
+                "mean_return": round(float(r.mean()), 6) if len(r) else None,
+                "std_return":  round(float(r.std(ddof=1)), 6) if len(r) > 1 else None,
+                "final_pnl":   round(period_pnl, 4),
+                "invested":    round(period_inv, 4),
+                "return_pct":  round(period_pnl / period_inv * 100, 2) if period_inv > 0 else 0,
+                "date_start":  sub["date"].min().strftime("%Y-%m-%d"),
+                "date_end":    sub["date"].max().strftime("%Y-%m-%d"),
+            }
+
+        retro_end_inv = float(retro.iloc[-1]["invested"]) if not retro.empty else 0.0
+        retro_end_pnl = float(retro.iloc[-1]["total_pnl"]) if not retro.empty else 0.0
+
+        result["periods"] = {
+            "retrospective": _stats(retro, "Retrospective",
+                                    initial_invested=0.0, initial_pnl=0.0),
+            "prospective":   _stats(prosp, "Prospective", primary=True,
+                                    initial_invested=retro_end_inv, initial_pnl=retro_end_pnl),
+            "full":          _stats(df,    "Full Series",
+                                    initial_invested=0.0, initial_pnl=0.0),
+        }
+
+        # Equity curve for sparkline
+        result["equity_series"] = df[["date", "total_pnl", "portfolio_value", "invested"]].assign(
+            date=df["date"].dt.strftime("%Y-%m-%d")
+        ).to_dict("records")
+
+    # ── Anti-Trump equity and periods ─────────────────────────────────────────
     if anti_equity_path.exists():
         adf = pd.read_csv(anti_equity_path)
         adf["date"] = pd.to_datetime(adf["date"])
         retro_a = adf[adf["date"] <  PROSP_START].copy()
         prosp_a = adf[adf["date"] >= PROSP_START].copy()
-        clean_a = adf[adf["date"] >= CLEAN_START].copy()
         result["anti_equity_series"] = (
             adf[["date", "total_pnl", "portfolio_value", "invested"]]
             .assign(date=adf["date"].dt.strftime("%Y-%m-%d"))
             .to_dict("records")
         )
+        retro_a_end_inv = float(retro_a.iloc[-1]["invested"]) if not retro_a.empty else 0.0
+        retro_a_end_pnl = float(retro_a.iloc[-1]["total_pnl"]) if not retro_a.empty else 0.0
         result["anti_periods"] = {
-            "retrospective": _stats(retro_a, "Retrospective"),
-            "prospective":   _stats(prosp_a, "Prospective (full)"),
-            "clean":         _stats(clean_a, "Prospective (clean)", primary=True),
-            "full":          _stats(adf,     "Full Series"),
+            "retrospective": _stats(retro_a, "Retrospective",
+                                    initial_invested=0.0, initial_pnl=0.0),
+            "prospective":   _stats(prosp_a, "Prospective", primary=True,
+                                    initial_invested=retro_a_end_inv, initial_pnl=retro_a_end_pnl),
+            "full":          _stats(adf,     "Full Series",
+                                    initial_invested=0.0, initial_pnl=0.0),
         }
 
     return result

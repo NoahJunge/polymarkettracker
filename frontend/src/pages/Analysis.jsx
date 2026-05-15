@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  AreaChart, Area, BarChart, Bar, Cell, ComposedChart, Line,
+  BarChart, Bar, Cell, ComposedChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
 } from "recharts";
@@ -8,7 +8,6 @@ import {
   getAnalysisStatus,
   getAnalysisMetrics,
   runAnalysis,
-  runMonteCarlo,
   getAnalysisFigureUrl,
 } from "../api/client";
 
@@ -50,12 +49,13 @@ function Card({ children, className = "" }) {
   );
 }
 
-function MetricTile({ label, value, sub, color }) {
+function MetricTile({ label, value, sub, color, formula }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
       <p className="text-xs text-slate-500 mb-1">{label}</p>
       <p className="text-xl font-bold" style={{ color: color || "#111827" }}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+      {formula && <p className="text-[10px] text-slate-300 mt-1.5 font-mono leading-tight break-words">{formula}</p>}
     </div>
   );
 }
@@ -120,7 +120,6 @@ function PeriodTable({ periods }) {
   const rows = [
     periods.retrospective,
     periods.prospective,
-    periods.clean,
     periods.full,
   ].filter(Boolean);
 
@@ -299,13 +298,12 @@ function EquitySpark({ proData, antiData }) {
   );
 }
 
-// ── MC Histogram component ────────────────────────────────────────────────────
-function MCHistogram({ histData, proTrumpMean }) {
+// ── MC Benchmark Histogram (static, from precomputed mc_neutral_means.csv) ────
+function MCBenchmarkHistogram({ histData, proMeanPct, antiMeanPct, proRank, antiRank }) {
   if (!histData?.length) return null;
-  const ptLine = proTrumpMean * 100;
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={histData} barCategoryGap="0%" margin={{ top: 16, right: 16, left: 40, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={260}>
+      <BarChart data={histData} barCategoryGap="0%" margin={{ top: 16, right: 24, left: 60, bottom: 24 }}>
         <CartesianGrid vertical={false} stroke="#e5e7eb" strokeDasharray="3 3" />
         <XAxis
           dataKey="x"
@@ -317,121 +315,39 @@ function MCHistogram({ histData, proTrumpMean }) {
           tickLine={false}
           axisLine={false}
           interval="preserveStartEnd"
+          label={{ value: "Mean Daily Return (%)", position: "insideBottom", offset: -14, fontSize: 11, fill: "#6b7280" }}
         />
         <YAxis
           tick={{ fontSize: 9, fill: "#6b7280" }}
           tickLine={false}
           axisLine={false}
           allowDecimals={false}
-          width={32}
+          width={44}
+          label={{ value: "Number of Simulations", angle: -90, position: "insideLeft", offset: 10, fontSize: 11, fill: "#6b7280" }}
         />
         <Tooltip
           formatter={(v) => [v, "Simulations"]}
           labelFormatter={(x) => `Mean return: ${Number(x).toFixed(4)}%`}
           contentStyle={{ fontSize: 11 }}
         />
+        {/* Pro-Trump reference line */}
         <ReferenceLine
-          x={ptLine}
+          x={proMeanPct}
           stroke={C_LOSS}
           strokeWidth={2}
           strokeDasharray="5 3"
-          label={{ value: "Pro-Trump", position: "insideTopRight", fontSize: 10, fill: C_LOSS }}
+          label={{ value: `Pro-Trump (${proRank?.toFixed(1)}th pct)`, position: "insideTopLeft", fontSize: 10, fill: C_LOSS }}
         />
-        <Bar dataKey="count" isAnimationActive={false} radius={[2, 2, 0, 0]}>
-          {histData.map((entry, i) => (
-            <Cell
-              key={i}
-              fill={entry.below_protrump ? C_LOSS : C_PRO}
-              fillOpacity={0.75}
-            />
-          ))}
-        </Bar>
+        {/* Anti-Trump reference line */}
+        <ReferenceLine
+          x={antiMeanPct}
+          stroke={C_ANTI}
+          strokeWidth={2}
+          strokeDasharray="5 3"
+          label={{ value: `Anti-Trump (${antiRank?.toFixed(1)}th pct)`, position: "insideTopRight", fontSize: 10, fill: C_ANTI }}
+        />
+        <Bar dataKey="count" isAnimationActive={false} radius={[2, 2, 0, 0]} fill={C_PRO} fillOpacity={0.6} />
       </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-// ── MC Equity Fan component ───────────────────────────────────────────────────
-function MCEquityFan({ equityFan }) {
-  if (!equityFan?.length) return null;
-
-  // Transform to range-area format
-  const data = equityFan.map((d) => ({
-    date: d.date,
-    outer: [d.p5, d.p95],
-    inner: [d.p25, d.p75],
-    p50: d.p50,
-    protrump: d.protrump,
-  }));
-
-  const tickFormatter = (d) => {
-    const dt = new Date(d);
-    return dt.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-  };
-
-  return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={data} margin={{ top: 8, right: 16, left: 60, bottom: 0 }}>
-        <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-        <XAxis
-          dataKey="date"
-          tickFormatter={tickFormatter}
-          tick={{ fontSize: 10, fill: "#6b7280" }}
-          tickLine={false}
-          axisLine={false}
-        />
-        <YAxis
-          tickFormatter={(v) => `$${v >= 0 ? "" : "-"}${Math.abs(v).toFixed(0)}`}
-          tick={{ fontSize: 10, fill: "#6b7280" }}
-          tickLine={false}
-          axisLine={false}
-        />
-        <Tooltip
-          formatter={(v, name) => {
-            if (Array.isArray(v)) return [`$${v[0].toFixed(2)} – $${v[1].toFixed(2)}`, name];
-            return [`$${Number(v).toFixed(2)}`, name];
-          }}
-          labelFormatter={(d) => d}
-          contentStyle={{ fontSize: 11 }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-        <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={1} />
-        <Area
-          type="monotone"
-          dataKey="outer"
-          name="5–95th pct"
-          fill={C_PRO}
-          fillOpacity={0.12}
-          stroke="none"
-          legendType="rect"
-        />
-        <Area
-          type="monotone"
-          dataKey="inner"
-          name="25–75th pct"
-          fill={C_PRO}
-          fillOpacity={0.25}
-          stroke="none"
-          legendType="rect"
-        />
-        <Line
-          type="monotone"
-          dataKey="p50"
-          name="Median (neutral)"
-          stroke="#94a3b8"
-          strokeWidth={1.5}
-          strokeDasharray="4 3"
-          dot={false}
-        />
-        <Line
-          type="monotone"
-          dataKey="protrump"
-          name="Pro-Trump actual"
-          stroke={C_PRO}
-          strokeWidth={2.5}
-          dot={false}
-        />
-      </ComposedChart>
     </ResponsiveContainer>
   );
 }
@@ -445,12 +361,7 @@ export default function Analysis() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
 
-  // Monte Carlo tab state
-  const [activeTab,  setActiveTab]  = useState("pro");
-  const [mcNSims,    setMcNSims]    = useState(1000);
-  const [mcRunning,  setMcRunning]  = useState(false);
-  const [mcResult,   setMcResult]   = useState(null);
-  const [mcError,    setMcError]    = useState(null);
+  const [activeTab, setActiveTab] = useState("pro");
 
   const load = useCallback(async () => {
     try {
@@ -480,20 +391,6 @@ export default function Analysis() {
       setRunLog("Error: " + (e?.response?.data?.detail || e.message));
     } finally {
       setRunning(false);
-    }
-  };
-
-  const handleRunMC = async () => {
-    setMcRunning(true);
-    setMcError(null);
-    setMcResult(null);
-    try {
-      const res = await runMonteCarlo(mcNSims);
-      setMcResult(res.data);
-    } catch (e) {
-      setMcError("Monte Carlo failed: " + (e?.response?.data?.detail || e.message));
-    } finally {
-      setMcRunning(false);
     }
   };
 
@@ -537,11 +434,13 @@ export default function Analysis() {
       </div>
 
       {/* Experiment closed banner */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs font-medium px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full border border-amber-200">
           Data as of 1 May 2026 — experiment closed
         </span>
-        <span className="text-xs text-slate-400">287-day full series · 69-day clean series (from 22 Feb 2026)</span>
+        <span className="text-xs text-slate-400">
+          287-day full series (Jul 2025 – May 2026) · Primary hypothesis tests use 69-day prospective clean series (22 Feb – 1 May 2026)
+        </span>
       </div>
 
       {/* Tab switcher */}
@@ -589,8 +488,9 @@ export default function Analysis() {
               <MetricTile
                 label="Final P&L"
                 value={fmtUsd(m.final_pnl)}
-                sub={`${fmtPct(m.return_on_invested)} of invested`}
+                sub={`${fmtPct(m.return_on_invested)} return on invested`}
                 color={m.final_pnl >= 0 ? C_GAIN : C_LOSS}
+                formula="Σ mark-to-market − Σ cost basis · full 287-day series"
               />
               <MetricTile
                 label="MC Percentile Rank"
@@ -602,30 +502,35 @@ export default function Analysis() {
                   : mcBenchmark.pct_rank >= 95 ? C_GAIN
                   : "#111827"
                 }
+                formula="% of 50/50 random-direction sims with lower mean return"
               />
               <MetricTile
                 label="Mean Daily Return"
                 value={fmtPct(m.mean_daily_return * 100, 4)}
-                sub="Prospective (clean)"
+                sub="69-day prospective (primary test)"
                 color={m.mean_daily_return >= 0 ? C_GAIN : C_LOSS}
+                formula="r̄ = mean(ΔP&L_t / invested_{t−1}) · 22 Feb – 1 May 2026"
               />
               <MetricTile
                 label="Annualised Sharpe"
                 value={fmt(m.sharpe_ann, 3)}
-                sub="√365 annualisation"
+                sub="69-day prospective clean series"
                 color={m.sharpe_ann >= 0 ? C_GAIN : C_LOSS}
+                formula="SR = r̄ / σ̂ × √365"
               />
               <MetricTile
                 label="Max Drawdown"
                 value={fmtPct(m.max_dd_pct)}
                 sub={fmtUsd(m.max_dd_usd)}
                 color={C_LOSS}
+                formula="max(peak_t − trough_t) / peak_t · full series"
               />
               <MetricTile
                 label="Win Rate"
                 value={mktSummary ? `${mktSummary.win_rate}%` : "—"}
                 sub={mktSummary ? `${mktSummary.positive}/${mktSummary.total} markets` : ""}
                 color={mktSummary?.win_rate >= 50 ? C_GAIN : C_LOSS}
+                formula="mark-to-market P&L > 0 as of 1 May (includes unresolved markets)"
               />
             </div>
           </div>
@@ -635,20 +540,23 @@ export default function Analysis() {
             <MetricTile
               label="Annualised Return"
               value={fmtPct(m.ann_return * 100)}
-              sub="Prospective clean series"
+              sub="69-day prospective clean series"
               color={m.ann_return >= 0 ? C_GAIN : C_LOSS}
+              formula="r̄ × 365"
             />
             <MetricTile
               label="VaR 95% (daily)"
               value={fmtPct(m.var_95 * 100)}
               sub={`CVaR 95%: ${fmtPct(m.cvar_95 * 100)}`}
               color={C_LOSS}
+              formula="5th percentile of daily return distribution"
             />
             <MetricTile
               label="Profit Factor"
               value={mktSummary?.profit_factor != null ? fmt(mktSummary.profit_factor, 3) : "—"}
               sub="Gross gain / gross loss"
               color={mktSummary?.profit_factor >= 1 ? C_GAIN : C_LOSS}
+              formula="Σ winning market P&L / Σ |losing market P&L|"
             />
           </div>
 
@@ -748,46 +656,52 @@ export default function Analysis() {
               Retrospective vs Prospective
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Split at {PROSP_START} — professor's suggested experimental design.
-              Retrospective uses CLOB historical prices; prospective uses live Gamma API collection.
+              Retrospective = Jul 19, 2025 – Jan 25, 2026 (CLOB historical prices, no_price = 1 − yes_price).
+              Prospective = Jan 26, 2026 – May 1, 2026 (live Gamma API collection, real bid-ask spread).
+              Invested and P&L are period-specific amounts (not cumulative), so Retrospective + Prospective = Full Series.
             </p>
             <PeriodTable periods={periods} />
           </Card>
 
           {/* Hypothesis test summary */}
           <Card className="p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4 uppercase tracking-wide">
-              Statistical Summary (Prospective Clean Series)
+            <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+              Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
+            <p className="text-xs text-slate-400 mb-4">
+              Primary test uses T = {m.T ?? 69} daily observations from the clean prospective series (22 Feb – 1 May 2026),
+              the period with stable continuous daily coverage (no missing days).
+              OLS trend uses the full 287-day series.
+            </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
                 {
-                  label: "Abnormal Return t-stat",
+                  label: "One-Sample t-Statistic",
                   stat: m.mean_daily_return != null && m.std_daily_return != null && m.T
                     ? fmt(m.mean_daily_return / m.std_daily_return * Math.sqrt(m.T), 4)
                     : "—",
-                  note: "H₀: E[AR] = 0 (primary)",
+                  note: "t = r̄ / (σ̂/√T); df = T−1; H₀: μ = 0",
                 },
                 {
                   label: "OLS Slope ($/day)",
                   stat: m.T > 0 && m.final_pnl != null ? fmt(m.final_pnl / m.T, 4) : "—",
-                  note: "p < 0.001 ***",
+                  note: "P&L_t = α + β·t + ε; HC3 robust SEs; p < 0.001",
                 },
                 {
                   label: "Sharpe Ratio (ann.)",
                   stat: fmt(m.sharpe_ann, 4),
-                  note: "√365 annualisation",
+                  note: "SR = r̄ / σ̂ × √365; prospective clean series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
                   stat: fmt(m.sortino_ann, 4),
-                  note: "Downside-adjusted",
+                  note: "SR_S = r̄ / σ̂_down × √365; σ̂_down = std of negative returns only",
                 },
               ].map(({ label, stat, note }) => (
                 <div key={label} className="bg-slate-50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 mb-1">{label}</p>
                   <p className="text-lg font-bold text-slate-800">{stat}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{note}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 font-mono leading-tight">{note}</p>
                 </div>
               ))}
             </div>
@@ -869,8 +783,9 @@ export default function Analysis() {
               <MetricTile
                 label="Final P&L"
                 value={fmtUsd(antiM.final_pnl)}
-                sub={`${fmtPct(antiM.return_on_invested)} of invested`}
+                sub={`${fmtPct(antiM.return_on_invested)} return on invested`}
                 color={antiM.final_pnl >= 0 ? C_GAIN : C_LOSS}
+                formula="Σ mark-to-market − Σ cost basis · full 287-day series"
               />
               <MetricTile
                 label="MC Percentile Rank"
@@ -882,30 +797,35 @@ export default function Analysis() {
                   : antiM.mc_pct_rank >= 95 ? C_GAIN
                   : "#111827"
                 }
+                formula="% of 50/50 random-direction sims with lower mean return"
               />
               <MetricTile
                 label="Mean Daily Return"
                 value={fmtPct(antiM.mean_daily_return * 100, 4)}
-                sub="Prospective (clean)"
+                sub="69-day prospective (primary test)"
                 color={antiM.mean_daily_return >= 0 ? C_GAIN : C_LOSS}
+                formula="r̄ = mean(ΔP&L_t / invested_{t−1}) · 22 Feb – 1 May 2026"
               />
               <MetricTile
                 label="Annualised Sharpe"
                 value={fmt(antiM.sharpe_ann, 3)}
-                sub="√365 annualisation"
+                sub="69-day prospective clean series"
                 color={antiM.sharpe_ann >= 0 ? C_GAIN : C_LOSS}
+                formula="SR = r̄ / σ̂ × √365"
               />
               <MetricTile
                 label="Max Drawdown"
                 value={fmtPct(antiM.max_dd_pct)}
                 sub={fmtUsd(antiM.max_dd_usd)}
                 color={C_LOSS}
+                formula="max(peak_t − trough_t) / peak_t · full series"
               />
               <MetricTile
                 label="Win Rate"
                 value={mktSummary ? `${(100 - mktSummary.win_rate).toFixed(1)}%` : "—"}
                 sub={mktSummary ? `${mktSummary.negative}/${mktSummary.total} markets` : ""}
                 color={mktSummary ? ((100 - mktSummary.win_rate) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
+                formula="mark-to-market P&L < 0 pro-Trump = win anti-Trump · as of 1 May"
               />
             </div>
           </div>
@@ -915,20 +835,23 @@ export default function Analysis() {
             <MetricTile
               label="Annualised Return"
               value={fmtPct(antiM.ann_return * 100)}
-              sub="Prospective clean series"
+              sub="69-day prospective clean series"
               color={antiM.ann_return >= 0 ? C_GAIN : C_LOSS}
+              formula="r̄ × 365"
             />
             <MetricTile
               label="VaR 95% (daily)"
               value={fmtPct(antiM.var_95 * 100)}
               sub={`CVaR 95%: ${fmtPct(antiM.cvar_95 * 100)}`}
               color={C_LOSS}
+              formula="5th percentile of daily return distribution"
             />
             <MetricTile
               label="Profit Factor"
               value={mktSummary?.profit_factor != null ? fmt(1 / mktSummary.profit_factor, 3) : "—"}
               sub="Gross gain / gross loss"
               color={mktSummary?.profit_factor != null && (1 / mktSummary.profit_factor) >= 1 ? C_GAIN : C_LOSS}
+              formula="Σ winning market P&L / Σ |losing market P&L|"
             />
           </div>
 
@@ -997,7 +920,10 @@ export default function Analysis() {
                 Retrospective vs Prospective
               </h2>
               <p className="text-xs text-slate-400 mb-4">
-                Anti-Trump strategy — split at {PROSP_START}.
+                Retrospective = Jul 19, 2025 – Jan 25, 2026 (CLOB historical prices).
+                Prospective = Jan 26, 2026 – May 1, 2026 (live Gamma API collection).
+                Anti-Trump flips YES↔NO on every market — same dates and quantities, opposite side.
+                Invested and P&L are period-specific (not cumulative).
               </p>
               <PeriodTable periods={antiPeriods} />
             </Card>
@@ -1005,38 +931,42 @@ export default function Analysis() {
 
           {/* Statistical summary */}
           <Card className="p-5">
-            <h2 className="text-sm font-semibold text-slate-700 mb-4 uppercase tracking-wide">
-              Statistical Summary (Prospective Clean Series)
+            <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+              Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
+            <p className="text-xs text-slate-400 mb-4">
+              Primary test uses T = {antiM.T ?? 69} daily observations from the clean prospective series (22 Feb – 1 May 2026).
+              Anti-Trump flips YES↔NO on every trade — entry price taken from the opposite side.
+            </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
                 {
-                  label: "Abnormal Return t-stat",
+                  label: "One-Sample t-Statistic",
                   stat: antiM.mean_daily_return != null && antiM.std_daily_return != null && antiM.T
                     ? fmt(antiM.mean_daily_return / antiM.std_daily_return * Math.sqrt(antiM.T), 4)
                     : "—",
-                  note: "H₀: E[AR] = 0 (primary)",
+                  note: "t = r̄ / (σ̂/√T); df = T−1; H₀: μ = 0",
                 },
                 {
                   label: "OLS Slope ($/day)",
                   stat: antiM.T > 0 && antiM.final_pnl != null ? fmt(antiM.final_pnl / antiM.T, 4) : "—",
-                  note: "Trend direction",
+                  note: "P&L_t = α + β·t + ε; HC3 robust SEs",
                 },
                 {
                   label: "Sharpe Ratio (ann.)",
                   stat: fmt(antiM.sharpe_ann, 4),
-                  note: "√365 annualisation",
+                  note: "SR = r̄ / σ̂ × √365; prospective clean series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
                   stat: fmt(antiM.sortino_ann, 4),
-                  note: "Downside-adjusted",
+                  note: "SR_S = r̄ / σ̂_down × √365; σ̂_down = std of negative returns only",
                 },
               ].map(({ label, stat, note }) => (
                 <div key={label} className="bg-slate-50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 mb-1">{label}</p>
                   <p className="text-lg font-bold text-slate-800">{stat}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{note}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 font-mono leading-tight">{note}</p>
                 </div>
               ))}
             </div>
@@ -1073,175 +1003,155 @@ export default function Analysis() {
       {activeTab === "montecarlo" && (
         <div className="space-y-6">
 
-          {/* Controls card */}
+          {/* Methodology explanation */}
           <Card className="p-5">
             <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
               Neutral Benchmark Monte Carlo
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              For each simulation, each market is independently assigned YES or NO with 50/50
-              probability — same markets, dates, and quantities as the actual pro-Trump strategy.
-              Run N simulations and compare the distribution of neutral outcomes to the pro-Trump result.
+              Precomputed from seed data · {mcBenchmark ? mcBenchmark.n_sims.toLocaleString() : "10,000"} simulations · Same markets, dates, and quantities as the actual pro-Trump strategy
             </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="text-sm font-medium text-slate-700">Simulations:</label>
-              <select
-                value={mcNSims}
-                onChange={(e) => setMcNSims(Number(e.target.value))}
-                className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-              >
-                {[500, 1000, 2000, 5000, 10000].map((n) => (
-                  <option key={n} value={n}>{n.toLocaleString()} simulations</option>
-                ))}
-              </select>
-              <button
-                onClick={handleRunMC}
-                disabled={mcRunning}
-                className="px-5 py-2 text-sm font-medium rounded-lg text-white transition-colors disabled:opacity-60"
-                style={{ background: mcRunning ? "#a78bfa" : C_PRO }}
-              >
-                {mcRunning ? "Running…" : "Run Monte Carlo"}
-              </button>
-              {mcRunning && (
-                <span className="text-xs text-slate-400">
-                  Computing {mcNSims.toLocaleString()} simulations — this may take 5–30 s…
-                </span>
-              )}
+            <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-700 space-y-3">
+              <p className="font-semibold text-slate-800">How the simulation works:</p>
+              <p>
+                The key question is: <em>"Does the pro-Trump directional choice add or destroy value, compared to simply trading randomly?"</em>
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-slate-600">
+                <li>
+                  For each simulation, every market is independently assigned <strong>YES</strong> or <strong>NO</strong> with 50/50 probability — a coin-flip direction with no political bias.
+                </li>
+                <li>
+                  The portfolio P&L is computed using the <strong>same markets, same dates, and same quantities</strong> as the actual pro-Trump DCA strategy.
+                </li>
+                <li>
+                  Repeat {mcBenchmark ? mcBenchmark.n_sims.toLocaleString() : "10,000"} times to build a distribution of "what if we had no directional bias?" outcomes.
+                </li>
+                <li>
+                  The actual pro-Trump mean daily return is ranked against this distribution. If it falls in the <strong>bottom 5%</strong>, directional betting on pro-Trump systematically destroys value → supports H₁b.
+                </li>
+              </ol>
+              <p className="text-xs text-slate-400 border-t border-slate-200 pt-3 mt-1">
+                Abnormal return: AR_t = R_pro-Trump,t − mean(R_neutral,t across simulations).
+                MC data covers Jul 19, 2025 – May 1, 2026 (experiment end).
+              </p>
             </div>
           </Card>
 
-          {/* Error */}
-          {mcError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {mcError}
+          {/* Static stats tiles */}
+          {mcBenchmark && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <MetricTile
+                label="Pro-Trump Mean Return"
+                value={fmtPct(mcBenchmark.pro_mean_pct, 4)}
+                sub="Actual daily mean"
+                color={mcBenchmark.pro_mean_pct >= 0 ? C_GAIN : C_LOSS}
+                formula="mean of daily_return for clean series"
+              />
+              <MetricTile
+                label="Anti-Trump Mean Return"
+                value={fmtPct(mcBenchmark.anti_mean_pct, 4)}
+                sub="Counterfactual daily mean"
+                color={mcBenchmark.anti_mean_pct >= 0 ? C_GAIN : C_LOSS}
+                formula="same trades, flipped YES↔NO direction"
+              />
+              <MetricTile
+                label="Pro-Trump Percentile"
+                value={`${mcBenchmark.pct_rank.toFixed(1)}th`}
+                sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
+                color={mcBenchmark.pct_rank <= 5 ? C_LOSS : "#111827"}
+                formula="% of neutral sims with lower mean return"
+              />
+              <MetricTile
+                label="Anti-Trump Percentile"
+                value={mcBenchmark.anti_pct_rank != null ? `${mcBenchmark.anti_pct_rank.toFixed(1)}th` : "—"}
+                sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
+                color={mcBenchmark.anti_pct_rank >= 95 ? C_GAIN : "#111827"}
+                formula="% of neutral sims with lower mean return"
+              />
             </div>
           )}
 
-          {/* Results */}
-          {mcResult && (
-            <>
-              {/* Stats tiles */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <MetricTile
-                  label="Pro-Trump Mean Return"
-                  value={fmtPct(mcResult.pro_trump_mean * 100, 4)}
-                  sub="Actual daily mean"
-                  color={mcResult.pro_trump_mean >= 0 ? C_GAIN : C_LOSS}
-                />
-                <MetricTile
-                  label="Neutral MC Mean"
-                  value={fmtPct(mcResult.mc_mean * 100, 4)}
-                  sub={`±${fmtPct(mcResult.mc_std * 100, 4)} std`}
-                  color="#111827"
-                />
-                <MetricTile
-                  label="Percentile Rank"
-                  value={`${mcResult.pct_rank.toFixed(1)}th`}
-                  sub={`of ${mcResult.n_sims.toLocaleString()} neutral sims`}
-                  color={mcResult.pct_rank <= 5 ? C_LOSS : mcResult.pct_rank >= 95 ? C_GAIN : "#111827"}
-                />
-                <MetricTile
-                  label="Empirical p-value"
-                  value={mcResult.emp_p_two_tail < 0.001 ? "p < 0.001" : `p = ${mcResult.emp_p_two_tail.toFixed(4)}`}
-                  sub={mcResult.emp_p_two_tail < 0.05 ? "Significant (α=0.05)" : "Not significant"}
-                  color={mcResult.emp_p_two_tail < 0.05 ? C_LOSS : "#111827"}
-                />
+          {/* Distribution histogram (static, from precomputed mc_neutral_means.csv) */}
+          {mcBenchmark?.histogram && (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                Distribution of Neutral Benchmark Mean Returns
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">
+                Histogram of mean daily returns across {mcBenchmark.n_sims.toLocaleString()} neutral simulations.
+                Each simulation uses 50/50 random direction per market.
+                Vertical lines show where the actual pro-Trump and anti-Trump strategies land in this distribution.
+              </p>
+              <MCBenchmarkHistogram
+                histData={mcBenchmark.histogram}
+                proMeanPct={mcBenchmark.pro_mean_pct}
+                antiMeanPct={mcBenchmark.anti_mean_pct}
+                proRank={mcBenchmark.pct_rank}
+                antiRank={mcBenchmark.anti_pct_rank}
+              />
+              <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: C_LOSS }}></span>
+                  Pro-Trump ({mcBenchmark.pct_rank.toFixed(1)}th pct) — below {(100 - mcBenchmark.pct_rank).toFixed(0)}% of neutral outcomes
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: C_ANTI }}></span>
+                  Anti-Trump ({mcBenchmark.anti_pct_rank?.toFixed(1)}th pct) — above {mcBenchmark.anti_pct_rank?.toFixed(0)}% of neutral outcomes
+                </span>
               </div>
+            </Card>
+          )}
 
-              {/* Verdict */}
-              <Card className="p-4">
-                <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${
-                  mcResult.verdict === "underperforms"
-                    ? "bg-red-50 border border-red-200"
-                    : mcResult.verdict === "outperforms"
-                    ? "bg-green-50 border border-green-200"
-                    : "bg-slate-50 border border-slate-200"
-                }`}>
-                  <div>
-                    {mcResult.verdict === "underperforms" ? (
-                      <>
-                        <span className="font-semibold text-red-800">H₁b supported. </span>
-                        <span className="text-red-700">
-                          Pro-Trump sits at the {mcResult.pct_rank.toFixed(1)}th percentile of{" "}
-                          {mcResult.n_sims.toLocaleString()} neutral benchmark simulations.{" "}
-                          {(mcResult.emp_p_one_tail * 100).toFixed(1)}% of random-direction portfolios
-                          achieve higher mean returns. Political direction (always betting pro-Trump)
-                          destroys value relative to a coin-flip strategy — consistent with systematic
-                          overvaluation of pro-Trump outcomes by ideologically motivated traders.
-                        </span>
-                      </>
-                    ) : mcResult.verdict === "outperforms" ? (
-                      <>
-                        <span className="font-semibold text-green-800">H₁a supported. </span>
-                        <span className="text-green-700">
-                          Pro-Trump sits at the {mcResult.pct_rank.toFixed(1)}th percentile.
-                          Outperforms {(100 - mcResult.emp_p_one_tail * 100).toFixed(1)}% of random-direction
-                          portfolios — consistent with systematic undervaluation of pro-Trump outcomes.
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold text-slate-700">H₀ not rejected. </span>
-                        <span className="text-slate-600">
-                          Pro-Trump at the {mcResult.pct_rank.toFixed(1)}th percentile — within the typical
-                          range of neutral benchmark outcomes. No statistically significant directional
-                          edge detected at α=0.05 (empirical p={mcResult.emp_p_two_tail.toFixed(4)}).
-                        </span>
-                      </>
+          {/* Verdict banner */}
+          {mcBenchmark && (
+            <Card className="p-4">
+              <div className={`rounded-lg px-4 py-3 text-sm ${
+                mcBenchmark.pct_rank <= 5
+                  ? "bg-red-50 border border-red-200"
+                  : mcBenchmark.pct_rank >= 95
+                  ? "bg-green-50 border border-green-200"
+                  : "bg-slate-50 border border-slate-200"
+              }`}>
+                {mcBenchmark.pct_rank <= 5 ? (
+                  <>
+                    <p className="font-semibold text-red-800 mb-1">H₁b supported — pro-Trump significantly underperforms neutral.</p>
+                    <p className="text-red-700">
+                      Pro-Trump sits at the <strong>{mcBenchmark.pct_rank.toFixed(1)}th percentile</strong> of {mcBenchmark.n_sims.toLocaleString()} neutral benchmark simulations.
+                      Political direction (always betting pro-Trump) destroys value relative to a coin-flip strategy —
+                      consistent with crypto-bro buyers systematically inflating pro-Trump prices above their true probability.
+                    </p>
+                    {mcBenchmark.anti_pct_rank >= 95 && (
+                      <p className="text-red-700 mt-2">
+                        The anti-Trump counterfactual sits at the <strong>{mcBenchmark.anti_pct_rank.toFixed(1)}th percentile</strong> —
+                        capturing the overpricing premium confirms the directional asymmetry.
+                      </p>
                     )}
-                  </div>
-                </div>
-              </Card>
+                  </>
+                ) : (
+                  <p className="text-slate-700">
+                    Pro-Trump at the {mcBenchmark.pct_rank.toFixed(1)}th percentile — within the typical range of neutral benchmark outcomes.
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
 
-              {/* Histogram */}
-              <Card className="p-5">
-                <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
-                  Distribution of Neutral Benchmark Mean Returns
-                </h2>
-                <p className="text-xs text-slate-400 mb-4">
-                  Histogram of mean daily returns across {mcResult.n_sims.toLocaleString()} neutral simulations.
-                  Red bars: outcomes at or below pro-Trump's mean return.
-                  Dashed vertical line: actual pro-Trump mean return.
+          {/* Precomputed figure */}
+          {figures.some((f) => f.filename === "fig11_mc_benchmark.png" && f.exists) && (
+            <Card className="overflow-hidden">
+              <div className="p-4 border-b border-slate-100">
+                <p className="text-sm font-semibold text-slate-700">Monte Carlo Equity Fan — Pro-Trump vs Neutral Benchmark</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Shaded bands = 5–95th and 25–75th percentile range of neutral simulations.
+                  Dashed = median neutral. Solid = actual pro-Trump portfolio P&L.
                 </p>
-                <MCHistogram
-                  histData={mcResult.histogram}
-                  proTrumpMean={mcResult.pro_trump_mean}
-                />
-              </Card>
-
-              {/* Equity fan */}
-              <Card className="p-5">
-                <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
-                  Cumulative P&amp;L — Neutral Benchmark vs Pro-Trump
-                </h2>
-                <p className="text-xs text-slate-400 mb-4">
-                  Shaded bands show 5–95th and 25–75th percentile range of{" "}
-                  {mcResult.n_sims.toLocaleString()} neutral simulations.
-                  Dashed line: median neutral strategy. Solid violet: actual pro-Trump portfolio.
-                </p>
-                <MCEquityFan equityFan={mcResult.equity_fan} />
-              </Card>
-
-              {/* MC details */}
-              <Card className="p-5">
-                <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
-                  Simulation Details
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                  {[
-                    { label: "Markets", value: mcResult.n_markets.toLocaleString() },
-                    { label: "Simulations", value: mcResult.n_sims.toLocaleString() },
-                    { label: "MC 5th pct", value: fmtPct(mcResult.mc_p5 * 100, 4) },
-                    { label: "MC 95th pct", value: fmtPct(mcResult.mc_p95 * 100, 4) },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="bg-slate-50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500 mb-1">{label}</p>
-                      <p className="text-base font-bold text-slate-800">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </>
+              </div>
+              <img
+                src={getAnalysisFigureUrl("fig11_mc_benchmark.png")}
+                alt="Monte Carlo equity fan"
+                className="w-full object-contain"
+              />
+            </Card>
           )}
         </div>
       )}
