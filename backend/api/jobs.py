@@ -7,6 +7,11 @@ from fastapi import APIRouter, Query, Request
 
 router = APIRouter()
 
+# Jan 26, 2026 00:00:00 UTC — first live Gamma collection run
+_PROSP_START_TS = int(datetime(2026, 1, 26, tzinfo=timezone.utc).timestamp())
+# Feb 22, 2026 00:00:00 UTC — start of stable daily Gamma coverage (exclusive end for gap fill)
+_CLEAN_START_TS = int(datetime(2026, 2, 22, tzinfo=timezone.utc).timestamp())
+
 
 @router.post("/jobs/collect")
 async def run_collector(
@@ -61,6 +66,22 @@ async def run_analysis(request: Request):
 async def run_clob_backfill(
     request: Request,
     start_ts: Optional[int] = Query(None, description="Unix timestamp floor for CLOB history fetch (default: 2024-01-01)"),
+    end_ts: Optional[int] = Query(None, description="Unix timestamp ceiling — points after this are skipped"),
 ):
     svc = request.app.state.clob_history_service
-    return await svc.run_backfill(start_ts=start_ts)
+    return await svc.run_backfill(start_ts=start_ts, end_ts=end_ts)
+
+
+@router.post("/jobs/fill-prospective-gaps")
+async def fill_prospective_gaps(request: Request):
+    """
+    Fill the sparse Jan 26 – Feb 21 gap in the prospective period with CLOB daily prices.
+    Injects midnight-UTC snapshots and rebackfills ALL DCA subscriptions (incl. cancelled).
+    Safe to run multiple times — existing snapshot doc IDs are idempotent.
+    """
+    svc = request.app.state.clob_history_service
+    return await svc.run_backfill(
+        start_ts=_PROSP_START_TS,
+        end_ts=_CLEAN_START_TS - 1,
+        include_cancelled=True,
+    )

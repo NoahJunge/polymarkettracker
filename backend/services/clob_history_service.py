@@ -52,7 +52,12 @@ class ClobHistoryService:
         if self._http and not self._http.is_closed:
             await self._http.aclose()
 
-    async def run_backfill(self, start_ts: int | None = None) -> dict:
+    async def run_backfill(
+        self,
+        start_ts: int | None = None,
+        end_ts: int | None = None,
+        include_cancelled: bool = False,
+    ) -> dict:
         """
         Full backfill flow:
         1. Load all tracked market IDs
@@ -65,6 +70,7 @@ class ClobHistoryService:
         effective_start_ts = start_ts if start_ts is not None else DEFAULT_START_TS
         stats = {
             "start_ts": effective_start_ts,
+            "end_ts": end_ts,
             "markets_attempted": 0,
             "markets_succeeded": 0,
             "snapshots_injected": 0,
@@ -109,6 +115,8 @@ class ClobHistoryService:
                     continue
 
                 for pt in points:
+                    if end_ts is not None and int(pt["t"]) > end_ts:
+                        continue
                     ts = datetime.fromtimestamp(pt["t"], tz=timezone.utc)
                     yes = round(float(pt["p"]), 6)
                     no = round(1.0 - yes, 6)
@@ -149,8 +157,8 @@ class ClobHistoryService:
         # Step 5 — refresh so DCA backfill sees new docs
         await self.es.client.indices.refresh(index=SNAPSHOTS_INDEX)
 
-        # Step 6 — re-backfill all active DCA subscriptions
-        dca_stats = await self._rebackfill_all_dca()
+        # Step 6 — re-backfill all active (and optionally cancelled) DCA subscriptions
+        dca_stats = await self._rebackfill_all_dca(include_cancelled=include_cancelled)
         stats["dca_rebackfilled"] = dca_stats.get("subscriptions_rebackfilled", 0)
         stats["dca_errors"] = dca_stats.get("errors", [])
 
@@ -236,11 +244,12 @@ class ClobHistoryService:
         logger.info("Fetched and stored token IDs for %d markets", fetched)
         return fetched
 
-    async def _rebackfill_all_dca(self) -> dict:
-        """Delete and regenerate trades for all active DCA subscriptions."""
+    async def _rebackfill_all_dca(self, include_cancelled: bool = False) -> dict:
+        """Delete and regenerate trades for all active (and optionally cancelled) DCA subscriptions."""
+        query = {"match_all": {}} if include_cancelled else {"term": {"active": True}}
         result = await self.es.search(
             "dca_subscriptions",
-            query={"term": {"active": True}},
+            query=query,
             size=10000,
         )
         subs = [h["_source"] for h in result["hits"]["hits"]]

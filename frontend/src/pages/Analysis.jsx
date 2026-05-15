@@ -479,8 +479,7 @@ export default function Analysis() {
         </span>
         <span className="text-xs text-slate-400">
           Full series: 287 days (Jul 19, 2025 – May 1, 2026) ·
-          Prospective: 96 days (Jan 26 – May 1, 2026, first live run) ·
-          Clean prospective: 69 days (Feb 22 – May 1, 2026, stable daily coverage) — used for formal t-test
+          Prospective: 96 days (Jan 26 – May 1, 2026) — Jan 26–Feb 21 gap filled with CLOB daily prices · used for formal t-test
         </span>
       </div>
 
@@ -535,7 +534,7 @@ export default function Analysis() {
                   <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">Key Results</h2>
                   <p className="text-xs text-slate-400 mb-3">
                     All figures cover the full 287-day series (Jul 19, 2025 – May 1, 2026) unless noted.
-                    See <em>Statistical Tests</em> below for the formal 69-day hypothesis test.
+                    See <em>Statistical Tests</em> below for the formal 96-day hypothesis test.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     <MetricTile
@@ -602,7 +601,7 @@ export default function Analysis() {
                     value={fmtPct(m.var_95 * 100)}
                     sub={`CVaR 95%: ${fmtPct(m.cvar_95 * 100)}`}
                     color={C_LOSS}
-                    formula="5th percentile of daily return distribution (69-day clean)"
+                    formula="5th percentile of daily return distribution (96-day prospective)"
                   />
                   <MetricTile
                     label="Profit Factor"
@@ -725,9 +724,8 @@ export default function Analysis() {
               Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Uses T = {m.T ?? 69} daily observations from the <strong>clean prospective series</strong> (22 Feb – 1 May 2026).
-              The full prospective period is 96 days (Jan 26 – May 1), but the first 27 days had sparse/irregular
-              Gamma API coverage — the clean series removes these to ensure every observation is a valid complete daily snapshot.
+              Uses T = {m.T ?? 96} daily observations from the <strong>prospective series</strong> (26 Jan – 1 May 2026).
+              Jan 26–Feb 21 gap filled with CLOB daily prices; Feb 22 onward collected live via Gamma API.
               Key Results tiles above use the full 287-day series.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
@@ -747,7 +745,7 @@ export default function Analysis() {
                 {
                   label: "Sharpe Ratio (ann.)",
                   stat: fmt(m.sharpe_ann, 4),
-                  note: "SR = r̄ / σ̂ × √365; prospective clean series",
+                  note: "SR = r̄ / σ̂ × √365; 96-day prospective series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
@@ -911,7 +909,7 @@ export default function Analysis() {
                     value={fmtPct(antiM.var_95 * 100)}
                     sub={`CVaR 95%: ${fmtPct(antiM.cvar_95 * 100)}`}
                     color={C_LOSS}
-                    formula="5th percentile of daily return distribution (69-day clean)"
+                    formula="5th percentile of daily return distribution (96-day prospective)"
                   />
                   <MetricTile
                     label="Profit Factor"
@@ -1005,8 +1003,8 @@ export default function Analysis() {
               Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Uses T = {antiM.T ?? 69} daily observations from the <strong>clean prospective series</strong> (22 Feb – 1 May 2026).
-              The 96-day full prospective (Jan 26 – May 1) includes 27 days of sparse early coverage excluded here.
+              Uses T = {antiM.T ?? 96} daily observations from the <strong>prospective series</strong> (26 Jan – 1 May 2026).
+              Jan 26–Feb 21 gap filled with CLOB daily prices; Feb 22 onward collected live via Gamma API.
               Anti-Trump flips YES↔NO on every trade — entry price taken from the opposite side.
               Key Results tiles above use the full 287-day series.
             </p>
@@ -1027,7 +1025,7 @@ export default function Analysis() {
                 {
                   label: "Sharpe Ratio (ann.)",
                   stat: fmt(antiM.sharpe_ann, 4),
-                  note: "SR = r̄ / σ̂ × √365; prospective clean series",
+                  note: "SR = r̄ / σ̂ × √365; 96-day prospective series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
@@ -1117,7 +1115,7 @@ export default function Analysis() {
                 value={fmtPct(mcBenchmark.pro_mean_pct, 4)}
                 sub="Actual daily mean"
                 color={mcBenchmark.pro_mean_pct >= 0 ? C_GAIN : C_LOSS}
-                formula="mean of daily_return for clean series"
+                formula="mean of daily_return for 96-day prospective series"
               />
               <MetricTile
                 label="Anti-Trump Mean Return"

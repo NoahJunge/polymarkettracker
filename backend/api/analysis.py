@@ -25,7 +25,7 @@ router = APIRouter()
 OUTPUT_DIR  = Path("/app/analysis/output")
 FIGURES_DIR = OUTPUT_DIR / "figures"
 PROSP_START = "2026-01-26"
-CLEAN_START = "2026-02-22"
+CLEAN_START = "2026-01-26"
 
 FIGURE_META = [
     ("fig1_equity_curve.png",        "Portfolio Value vs Invested Capital",  "Full timeline with retrospective / prospective divider"),

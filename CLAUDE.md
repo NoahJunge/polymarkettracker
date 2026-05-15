@@ -135,7 +135,7 @@ All tests run in `backend/analysis/run_analysis.py`. Results visible at `/analys
 - **Wilcoxon signed-rank:** non-parametric median test
 - **OLS trend regression:** `total_pnl_t = α + β·t + ε_t` with HC3 robust SEs — statistically significant downward slope (p < 0.001)
 - **Risk metrics:** Sharpe (√365), Sortino, Calmar, VaR 95%, CVaR 95%, max drawdown
-- **Anti-Trump counterfactual:** flip YES↔NO on every trade — the $1,615 gap is the strongest directional result
+- **Anti-Trump counterfactual:** flip YES↔NO on every trade — the ~$2,034 prospective gap is the strongest directional result
 
 **Retrospective vs Prospective split (professor's suggestion):**
 - Both periods show negative mean returns (consistent direction → H₁b)
@@ -144,40 +144,39 @@ All tests run in `backend/analysis/run_analysis.py`. Results visible at `/analys
 
 **Anti-Trump counterfactual (now primary thesis framing):**
 - Flip YES↔NO on every trade — entry price taken from the opposite side's snapshot price
-- Anti-Trump clean series (T=75): mean daily return = +0.031%, Sharpe = +0.532, Final P&L = +$287.54
-- Anti-Trump MC percentile rank = **99.79th** (top 0.21% of 10,000 neutral simulations) — highly significant
-- The ~$592 gap between anti-Trump (+$288) and pro-Trump (-$304) is the strongest directional result
+- Anti-Trump prospective series (T=96): mean daily return = +0.052%, Sharpe = +1.16, Final P&L = +$1,005.66
+- Anti-Trump MC percentile rank = **100th** (top of 10,000 neutral simulations) — highly significant
+- The ~$2,034 gap between anti-Trump (+$1,006) and pro-Trump (-$1,028) is the strongest directional result (prospective period only)
 
 ---
 
-## 4. Dataset — Current Numbers (as of 2026-05-13)
+## 4. Dataset — Current Numbers (as of 2026-05-15)
 
 | Metric | Value |
 |--------|-------|
 | Total markets discovered (ever) | ~3,200+ |
 | Markets tracked | ~149–204 |
-| Total price snapshots (ES) | ~40,970 |
-| Total paper trades (DCA backfill + daily) | ~27,576 |
+| Total price snapshots (ES) | ~41,970 |
+| Total paper trades (DCA backfill + daily) | ~48,088 |
 | DCA subscriptions | 230 (161 YES, 69 NO) |
 | Retrospective data start (CLOB) | 2025-07-19 (earliest market) |
 | Prospective data start (live collection) | 2026-01-26 |
-| Total data span | ~291 days |
+| Total data span | 287 days |
 
 ### Data periods
 | Period | Source | Coverage | Notes |
 |--------|--------|----------|-------|
 | Jul 2025 – Jan 25, 2026 | CLOB API (retrospective) | 149 markets, daily | `no_price = 1 − yes_price` (no spread) |
-| Jan 26 – Feb 12, 2026 | Gamma API | Irregular | Sparse early coverage |
-| Feb 13–21, 2026 | Gamma API | 120–235 markets/day | Growing coverage |
-| Feb 22 – present | Gamma API (prospective, clean) | ~149–204 markets/day | Primary analysis period |
+| Jan 26 – Feb 21, 2026 | CLOB API (gap fill) | 164 markets, daily | Gap filled 2026-05-15; 3,360 snapshots injected |
+| Feb 22 – May 1, 2026 | Gamma API (prospective, live) | ~149–204 markets/day | Real-time collection |
 
-**Key data quality note:** The "clean" prospective series begins 2026-02-22 when stable daily coverage was established. The t-test primary result uses this period (T=75 obs as of 2026-05-13). The full series (T=284+) is the robustness check.
+**Key data quality note:** The prospective series (CLEAN_START = 2026-01-26) now has complete daily coverage for all 96 days. Jan 26–Feb 21 was back-filled using CLOB daily prices (same CLOB API used for the retrospective period). The t-test primary result uses T=96 prospective observations.
 
-### Key results (as of 2026-05-13, T=75 clean series)
-| Strategy | Final P&L | Mean Daily Return | Sharpe (ann.) | MC Percentile |
-|----------|-----------|-------------------|---------------|---------------|
-| Pro-Trump | −$304.42 | −0.0565% | −0.537 | 0.5th (bottom) |
-| Anti-Trump | +$287.54 | +0.031% | +0.532 | 99.79th (top) |
+### Key results (as of 2026-05-15, T=96 prospective series)
+| Strategy | Final P&L (prosp.) | Mean Daily Return | Sharpe (ann.) | MC Percentile |
+|----------|-------------------|-------------------|---------------|---------------|
+| Pro-Trump | −$1,028.30 | −0.0941% | −1.160 | 0.42nd (bottom) |
+| Anti-Trump | +$1,005.66 | +0.0515% | +1.159 | 100.0th (top) |
 
 ---
 
@@ -295,7 +294,8 @@ cd backend && pytest tests/ -v   # 92 unit tests, no ES dependency
 | POST | `/api/jobs/collect` | Trigger manual Gamma collection |
 | POST | `/api/jobs/dca` | Trigger manual DCA execution |
 | POST | `/api/jobs/analysis` | Run `run_analysis.py` script, save figures + CSVs |
-| POST | `/api/jobs/clob-backfill` | One-shot: fetch CLOB history → inject snapshots → rebackfill all DCA |
+| POST | `/api/jobs/clob-backfill` | Fetch CLOB history → inject snapshots → rebackfill all DCA (supports `start_ts`, `end_ts` query params) |
+| POST | `/api/jobs/fill-prospective-gaps` | Fill Jan 26–Feb 21 gap with CLOB prices, rebackfill ALL 230 subscriptions (incl. cancelled) |
 | GET | `/api/analysis/status` | Figure availability + last run time |
 | GET | `/api/analysis/metrics` | Key metrics JSON (from CSVs) + period comparison |
 | GET | `/api/analysis/figures/{filename}` | Serve a PNG figure by filename |
@@ -316,7 +316,7 @@ cd backend && pytest tests/ -v   # 92 unit tests, no ES dependency
 The `/analysis` page has **three tabs**: Pro-Trump | Anti-Trump | Monte Carlo
 - **Pro-Trump tab:** all pro-Trump metrics, equity sparkline (both strategies overlaid), period table, figures gallery (pro-Trump figures only)
 - **Anti-Trump tab:** all anti-Trump metrics with H₁b verdict card, equity sparkline (both overlaid), figures gallery (anti figures + fig12)
-- **Monte Carlo tab:** interactive neutral benchmark simulation (unchanged)
+- **Monte Carlo tab:** static precomputed display — methodology card, 4 stat tiles, histogram with both pro/anti reference lines, both fig11 figures (pro + anti)
 - Equity sparkline uses `ComposedChart` with two `Line` components — purple (pro) + orange (anti)
 
 ### API — `GET /api/analysis/metrics` response (updated May 2026)
