@@ -478,7 +478,9 @@ export default function Analysis() {
           Data as of 1 May 2026 — experiment closed
         </span>
         <span className="text-xs text-slate-400">
-          287-day full series (Jul 2025 – May 2026) · Primary hypothesis tests use 69-day prospective clean series (22 Feb – 1 May 2026)
+          Full series: 287 days (Jul 19, 2025 – May 1, 2026) ·
+          Prospective: 96 days (Jan 26 – May 1, 2026, first live run) ·
+          Clean prospective: 69 days (Feb 22 – May 1, 2026, stable daily coverage) — used for formal t-test
         </span>
       </div>
 
@@ -520,84 +522,99 @@ export default function Analysis() {
 
       {activeTab === "pro" && !loading && metrics && (
         <>
-          {/* Key metrics tiles */}
-          <div>
-            <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Key Results</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <MetricTile
-                label="Final P&L"
-                value={fmtUsd(m.final_pnl)}
-                sub={`${fmtPct(m.return_on_invested)} return on invested`}
-                color={m.final_pnl >= 0 ? C_GAIN : C_LOSS}
-                formula="Σ mark-to-market − Σ cost basis · full 287-day series"
-              />
-              <MetricTile
-                label="MC Percentile Rank"
-                value={mcBenchmark ? `${mcBenchmark.pct_rank.toFixed(1)}th` : "—"}
-                sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
-                color={
-                  !mcBenchmark ? "#111827"
-                  : mcBenchmark.pct_rank <= 5 ? C_LOSS
-                  : mcBenchmark.pct_rank >= 95 ? C_GAIN
-                  : "#111827"
-                }
-                formula="% of 50/50 random-direction sims with lower mean return"
-              />
-              <MetricTile
-                label="Mean Daily Return"
-                value={fmtPct(m.mean_daily_return * 100, 4)}
-                sub="69-day prospective (primary test)"
-                color={m.mean_daily_return >= 0 ? C_GAIN : C_LOSS}
-                formula="r̄ = mean(ΔP&L_t / invested_{t−1}) · 22 Feb – 1 May 2026"
-              />
-              <MetricTile
-                label="Annualised Sharpe"
-                value={fmt(m.sharpe_ann, 3)}
-                sub="69-day prospective clean series"
-                color={m.sharpe_ann >= 0 ? C_GAIN : C_LOSS}
-                formula="SR = r̄ / σ̂ × √365"
-              />
-              <MetricTile
-                label="Max Drawdown"
-                value={fmtPct(m.max_dd_pct)}
-                sub={fmtUsd(m.max_dd_usd)}
-                color={C_LOSS}
-                formula="max(peak_t − trough_t) / peak_t · full series"
-              />
-              <MetricTile
-                label="Win Rate"
-                value={mktSummary ? `${mktSummary.win_rate}%` : "—"}
-                sub={mktSummary ? `${mktSummary.positive}/${mktSummary.total} markets` : ""}
-                color={mktSummary?.win_rate >= 50 ? C_GAIN : C_LOSS}
-                formula="mark-to-market P&L > 0 as of 1 May (includes unresolved markets)"
-              />
-            </div>
-          </div>
+          {/* Key metrics tiles — all using full 287-day series */}
+          {(() => {
+            const fullMean = periods?.full?.mean_return ?? null;
+            const fullStd  = periods?.full?.std_return  ?? null;
+            const fullSharpe = fullMean != null && fullStd != null && fullStd > 0
+              ? fullMean / fullStd * Math.sqrt(365) : null;
+            const fullAnnReturn = fullMean != null ? fullMean * 365 : null;
+            return (
+              <>
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">Key Results</h2>
+                  <p className="text-xs text-slate-400 mb-3">
+                    All figures cover the full 287-day series (Jul 19, 2025 – May 1, 2026) unless noted.
+                    See <em>Statistical Tests</em> below for the formal 69-day hypothesis test.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <MetricTile
+                      label="Final P&L"
+                      value={fmtUsd(periods?.full?.final_pnl ?? m.final_pnl)}
+                      sub={`${fmtPct(periods?.full?.return_pct ?? m.return_on_invested)} return on invested`}
+                      color={(periods?.full?.final_pnl ?? m.final_pnl) >= 0 ? C_GAIN : C_LOSS}
+                      formula="Σ mark-to-market − Σ cost basis"
+                    />
+                    <MetricTile
+                      label="MC Percentile Rank"
+                      value={mcBenchmark ? `${mcBenchmark.pct_rank.toFixed(1)}th` : "—"}
+                      sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
+                      color={
+                        !mcBenchmark ? "#111827"
+                        : mcBenchmark.pct_rank <= 5 ? C_LOSS
+                        : mcBenchmark.pct_rank >= 95 ? C_GAIN
+                        : "#111827"
+                      }
+                      formula="% of 50/50 random-direction sims with lower mean return"
+                    />
+                    <MetricTile
+                      label="Mean Daily Return"
+                      value={fullMean != null ? fmtPct(fullMean * 100, 4) : "—"}
+                      sub={`Full series · ${periods?.full?.days ?? 287} days`}
+                      color={fullMean >= 0 ? C_GAIN : C_LOSS}
+                      formula="r̄ = mean(ΔP&L_t / invested_{t−1})"
+                    />
+                    <MetricTile
+                      label="Annualised Sharpe"
+                      value={fullSharpe != null ? fmt(fullSharpe, 3) : "—"}
+                      sub="Full series · √365 annualisation"
+                      color={fullSharpe >= 0 ? C_GAIN : C_LOSS}
+                      formula="SR = r̄ / σ̂ × √365"
+                    />
+                    <MetricTile
+                      label="Max Drawdown"
+                      value={fmtPct(m.max_dd_pct)}
+                      sub={fmtUsd(m.max_dd_usd)}
+                      color={C_LOSS}
+                      formula="max(peak_t − trough_t) / peak_t"
+                    />
+                    <MetricTile
+                      label="Win Rate"
+                      value={mktSummary ? `${mktSummary.win_rate}%` : "—"}
+                      sub={mktSummary ? `${mktSummary.positive}/${mktSummary.total} markets` : ""}
+                      color={mktSummary?.win_rate >= 50 ? C_GAIN : C_LOSS}
+                      formula="mark-to-market P&L > 0 as of 1 May (includes unresolved)"
+                    />
+                  </div>
+                </div>
 
-          {/* Secondary metric row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <MetricTile
-              label="Annualised Return"
-              value={fmtPct(m.ann_return * 100)}
-              sub="69-day prospective clean series"
-              color={m.ann_return >= 0 ? C_GAIN : C_LOSS}
-              formula="r̄ × 365"
-            />
-            <MetricTile
-              label="VaR 95% (daily)"
-              value={fmtPct(m.var_95 * 100)}
-              sub={`CVaR 95%: ${fmtPct(m.cvar_95 * 100)}`}
-              color={C_LOSS}
-              formula="5th percentile of daily return distribution"
-            />
-            <MetricTile
-              label="Profit Factor"
-              value={mktSummary?.profit_factor != null ? fmt(mktSummary.profit_factor, 3) : "—"}
-              sub="Gross gain / gross loss"
-              color={mktSummary?.profit_factor >= 1 ? C_GAIN : C_LOSS}
-              formula="Σ winning market P&L / Σ |losing market P&L|"
-            />
-          </div>
+                {/* Secondary metric row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <MetricTile
+                    label="Annualised Return"
+                    value={fullAnnReturn != null ? fmtPct(fullAnnReturn * 100) : "—"}
+                    sub="Full series · r̄ × 365"
+                    color={fullAnnReturn >= 0 ? C_GAIN : C_LOSS}
+                    formula="mean daily return × 365 trading days"
+                  />
+                  <MetricTile
+                    label="VaR 95% (daily)"
+                    value={fmtPct(m.var_95 * 100)}
+                    sub={`CVaR 95%: ${fmtPct(m.cvar_95 * 100)}`}
+                    color={C_LOSS}
+                    formula="5th percentile of daily return distribution (69-day clean)"
+                  />
+                  <MetricTile
+                    label="Profit Factor"
+                    value={mktSummary?.profit_factor != null ? fmt(mktSummary.profit_factor, 3) : "—"}
+                    sub="Gross gain / gross loss"
+                    color={mktSummary?.profit_factor >= 1 ? C_GAIN : C_LOSS}
+                    formula="Σ winning market P&L / Σ |losing market P&L|"
+                  />
+                </div>
+              </>
+            );
+          })()}
 
           {/* MC benchmark card */}
           {mcBenchmark && (
@@ -708,9 +725,10 @@ export default function Analysis() {
               Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Primary test uses T = {m.T ?? 69} daily observations from the clean prospective series (22 Feb – 1 May 2026),
-              the period with stable continuous daily coverage (no missing days).
-              OLS trend uses the full 287-day series.
+              Uses T = {m.T ?? 69} daily observations from the <strong>clean prospective series</strong> (22 Feb – 1 May 2026).
+              The full prospective period is 96 days (Jan 26 – May 1), but the first 27 days had sparse/irregular
+              Gamma API coverage — the clean series removes these to ensure every observation is a valid complete daily snapshot.
+              Key Results tiles above use the full 287-day series.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
@@ -812,87 +830,100 @@ export default function Analysis() {
 
       {activeTab === "anti" && !loading && metrics && (
         <>
-          {/* Key metrics tiles */}
-          <div>
-            <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Key Results — Anti-Trump Strategy</h2>
-            <p className="text-xs text-slate-400 mb-3">
-              Counterfactual: always bet <em>against</em> Trump — flip YES↔NO on every market. Same markets, dates, and trade sizes as the pro-Trump strategy.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <MetricTile
-                label="Final P&L"
-                value={fmtUsd(antiM.final_pnl)}
-                sub={`${fmtPct(antiM.return_on_invested)} return on invested`}
-                color={antiM.final_pnl >= 0 ? C_GAIN : C_LOSS}
-                formula="Σ mark-to-market − Σ cost basis · full 287-day series"
-              />
-              <MetricTile
-                label="MC Percentile Rank"
-                value={antiM.mc_pct_rank != null ? `${Number(antiM.mc_pct_rank).toFixed(1)}th` : "—"}
-                sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
-                color={
-                  antiM.mc_pct_rank == null ? "#111827"
-                  : antiM.mc_pct_rank <= 5 ? C_LOSS
-                  : antiM.mc_pct_rank >= 95 ? C_GAIN
-                  : "#111827"
-                }
-                formula="% of 50/50 random-direction sims with lower mean return"
-              />
-              <MetricTile
-                label="Mean Daily Return"
-                value={fmtPct(antiM.mean_daily_return * 100, 4)}
-                sub="69-day prospective (primary test)"
-                color={antiM.mean_daily_return >= 0 ? C_GAIN : C_LOSS}
-                formula="r̄ = mean(ΔP&L_t / invested_{t−1}) · 22 Feb – 1 May 2026"
-              />
-              <MetricTile
-                label="Annualised Sharpe"
-                value={fmt(antiM.sharpe_ann, 3)}
-                sub="69-day prospective clean series"
-                color={antiM.sharpe_ann >= 0 ? C_GAIN : C_LOSS}
-                formula="SR = r̄ / σ̂ × √365"
-              />
-              <MetricTile
-                label="Max Drawdown"
-                value={fmtPct(antiM.max_dd_pct)}
-                sub={fmtUsd(antiM.max_dd_usd)}
-                color={C_LOSS}
-                formula="max(peak_t − trough_t) / peak_t · full series"
-              />
-              <MetricTile
-                label="Win Rate"
-                value={mktSummary ? `${(100 - mktSummary.win_rate).toFixed(1)}%` : "—"}
-                sub={mktSummary ? `${mktSummary.negative}/${mktSummary.total} markets` : ""}
-                color={mktSummary ? ((100 - mktSummary.win_rate) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
-                formula="mark-to-market P&L < 0 pro-Trump = win anti-Trump · as of 1 May"
-              />
-            </div>
-          </div>
+          {/* Key metrics tiles — all using full 287-day series */}
+          {(() => {
+            const aFull = antiPeriods?.full;
+            const aFullMean = aFull?.mean_return ?? null;
+            const aFullStd  = aFull?.std_return  ?? null;
+            const aFullSharpe = aFullMean != null && aFullStd != null && aFullStd > 0
+              ? aFullMean / aFullStd * Math.sqrt(365) : null;
+            const aFullAnnReturn = aFullMean != null ? aFullMean * 365 : null;
+            return (
+              <>
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">Key Results — Anti-Trump Strategy</h2>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Counterfactual: always bet <em>against</em> Trump — flip YES↔NO on every market. Same markets, dates, and trade sizes.
+                    All figures cover the full 287-day series (Jul 19, 2025 – May 1, 2026).
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <MetricTile
+                      label="Final P&L"
+                      value={fmtUsd(aFull?.final_pnl ?? antiM.final_pnl)}
+                      sub={`${fmtPct(aFull?.return_pct ?? antiM.return_on_invested)} return on invested`}
+                      color={(aFull?.final_pnl ?? antiM.final_pnl) >= 0 ? C_GAIN : C_LOSS}
+                      formula="Σ mark-to-market − Σ cost basis"
+                    />
+                    <MetricTile
+                      label="MC Percentile Rank"
+                      value={antiM.mc_pct_rank != null ? `${Number(antiM.mc_pct_rank).toFixed(1)}th` : "—"}
+                      sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
+                      color={
+                        antiM.mc_pct_rank == null ? "#111827"
+                        : antiM.mc_pct_rank <= 5 ? C_LOSS
+                        : antiM.mc_pct_rank >= 95 ? C_GAIN
+                        : "#111827"
+                      }
+                      formula="% of 50/50 random-direction sims with lower mean return"
+                    />
+                    <MetricTile
+                      label="Mean Daily Return"
+                      value={aFullMean != null ? fmtPct(aFullMean * 100, 4) : "—"}
+                      sub={`Full series · ${aFull?.days ?? 287} days`}
+                      color={aFullMean >= 0 ? C_GAIN : C_LOSS}
+                      formula="r̄ = mean(ΔP&L_t / invested_{t−1})"
+                    />
+                    <MetricTile
+                      label="Annualised Sharpe"
+                      value={aFullSharpe != null ? fmt(aFullSharpe, 3) : "—"}
+                      sub="Full series · √365 annualisation"
+                      color={aFullSharpe >= 0 ? C_GAIN : C_LOSS}
+                      formula="SR = r̄ / σ̂ × √365"
+                    />
+                    <MetricTile
+                      label="Max Drawdown"
+                      value={fmtPct(antiM.max_dd_pct)}
+                      sub={fmtUsd(antiM.max_dd_usd)}
+                      color={C_LOSS}
+                      formula="max(peak_t − trough_t) / peak_t"
+                    />
+                    <MetricTile
+                      label="Win Rate"
+                      value={mktSummary ? `${(100 - mktSummary.win_rate).toFixed(1)}%` : "—"}
+                      sub={mktSummary ? `${mktSummary.negative}/${mktSummary.total} markets` : ""}
+                      color={mktSummary ? ((100 - mktSummary.win_rate) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
+                      formula="pro-Trump losing market = anti-Trump win · as of 1 May"
+                    />
+                  </div>
+                </div>
 
-          {/* Secondary metric row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <MetricTile
-              label="Annualised Return"
-              value={fmtPct(antiM.ann_return * 100)}
-              sub="69-day prospective clean series"
-              color={antiM.ann_return >= 0 ? C_GAIN : C_LOSS}
-              formula="r̄ × 365"
-            />
-            <MetricTile
-              label="VaR 95% (daily)"
-              value={fmtPct(antiM.var_95 * 100)}
-              sub={`CVaR 95%: ${fmtPct(antiM.cvar_95 * 100)}`}
-              color={C_LOSS}
-              formula="5th percentile of daily return distribution"
-            />
-            <MetricTile
-              label="Profit Factor"
-              value={mktSummary?.profit_factor != null ? fmt(1 / mktSummary.profit_factor, 3) : "—"}
-              sub="Gross gain / gross loss"
-              color={mktSummary?.profit_factor != null && (1 / mktSummary.profit_factor) >= 1 ? C_GAIN : C_LOSS}
-              formula="Σ winning market P&L / Σ |losing market P&L|"
-            />
-          </div>
+                {/* Secondary metric row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <MetricTile
+                    label="Annualised Return"
+                    value={aFullAnnReturn != null ? fmtPct(aFullAnnReturn * 100) : "—"}
+                    sub="Full series · r̄ × 365"
+                    color={aFullAnnReturn >= 0 ? C_GAIN : C_LOSS}
+                    formula="mean daily return × 365 trading days"
+                  />
+                  <MetricTile
+                    label="VaR 95% (daily)"
+                    value={fmtPct(antiM.var_95 * 100)}
+                    sub={`CVaR 95%: ${fmtPct(antiM.cvar_95 * 100)}`}
+                    color={C_LOSS}
+                    formula="5th percentile of daily return distribution (69-day clean)"
+                  />
+                  <MetricTile
+                    label="Profit Factor"
+                    value={mktSummary?.profit_factor != null ? fmt(1 / mktSummary.profit_factor, 3) : "—"}
+                    sub="Gross gain / gross loss"
+                    color={mktSummary?.profit_factor != null && (1 / mktSummary.profit_factor) >= 1 ? C_GAIN : C_LOSS}
+                    formula="Σ winning market P&L / Σ |losing market P&L|"
+                  />
+                </div>
+              </>
+            );
+          })()}
 
           {/* MC percentile verdict */}
           {antiM.mc_pct_rank != null && (
@@ -974,8 +1005,10 @@ export default function Analysis() {
               Statistical Tests — Prospective Period (26 Jan – 1 May 2026)
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Primary test uses T = {antiM.T ?? 69} daily observations from the clean prospective series (22 Feb – 1 May 2026).
+              Uses T = {antiM.T ?? 69} daily observations from the <strong>clean prospective series</strong> (22 Feb – 1 May 2026).
+              The 96-day full prospective (Jan 26 – May 1) includes 27 days of sparse early coverage excluded here.
               Anti-Trump flips YES↔NO on every trade — entry price taken from the opposite side.
+              Key Results tiles above use the full 287-day series.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
