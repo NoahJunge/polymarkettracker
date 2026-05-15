@@ -1175,22 +1175,42 @@ export default function Analysis() {
             </Card>
           )}
 
-          {/* Precomputed figure */}
-          {figures.some((f) => f.filename === "fig11_mc_benchmark.png" && f.exists) && (
-            <Card className="overflow-hidden">
-              <div className="p-4 border-b border-slate-100">
-                <p className="text-sm font-semibold text-slate-700">Monte Carlo Equity Fan — Pro-Trump vs Neutral Benchmark</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Shaded bands = 5–95th and 25–75th percentile range of neutral simulations.
-                  Dashed = median neutral. Solid = actual pro-Trump portfolio P&L.
-                </p>
-              </div>
-              <img
-                src={getAnalysisFigureUrl("fig11_mc_benchmark.png")}
-                alt="Monte Carlo equity fan"
-                className="w-full object-contain"
-              />
-            </Card>
+          {/* Precomputed figures — Pro-Trump and Anti-Trump side by side */}
+          {figures.some((f) => (f.filename === "fig11_mc_benchmark.png" || f.filename === "fig11_mc_benchmark_anti.png") && f.exists) && (
+            <div className="space-y-4">
+              {figures.find((f) => f.filename === "fig11_mc_benchmark.png")?.exists && (
+                <Card className="overflow-hidden">
+                  <div className="p-4 border-b border-slate-100">
+                    <p className="text-sm font-semibold text-slate-700">Pro-Trump — Monte Carlo Neutral Benchmark</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Left: distribution of 10,000 neutral sim mean returns vs pro-Trump actual (dashed line).
+                      Right: daily return fan chart — shaded bands = 5–95th and 25–75th percentile of neutral sims.
+                    </p>
+                  </div>
+                  <img
+                    src={getAnalysisFigureUrl("fig11_mc_benchmark.png")}
+                    alt="Pro-Trump Monte Carlo benchmark"
+                    className="w-full object-contain"
+                  />
+                </Card>
+              )}
+              {figures.find((f) => f.filename === "fig11_mc_benchmark_anti.png")?.exists && (
+                <Card className="overflow-hidden">
+                  <div className="p-4 border-b border-slate-100">
+                    <p className="text-sm font-semibold text-slate-700">Anti-Trump — Monte Carlo Neutral Benchmark</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Same 10,000 neutral simulations, compared against the anti-Trump counterfactual.
+                      Anti-Trump sits in the far right tail — confirming pro-Trump outcomes are systematically overpriced.
+                    </p>
+                  </div>
+                  <img
+                    src={getAnalysisFigureUrl("fig11_mc_benchmark_anti.png")}
+                    alt="Anti-Trump Monte Carlo benchmark"
+                    className="w-full object-contain"
+                  />
+                </Card>
+              )}
+            </div>
           )}
         </div>
       )}
