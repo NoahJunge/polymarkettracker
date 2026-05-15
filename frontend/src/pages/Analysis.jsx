@@ -55,7 +55,7 @@ function MetricTile({ label, value, sub, color, formula }) {
       <p className="text-xs text-slate-500 mb-1">{label}</p>
       <p className="text-xl font-bold" style={{ color: color || "#111827" }}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
-      {formula && <p className="text-[10px] text-slate-300 mt-1.5 font-mono leading-tight break-words">{formula}</p>}
+      {formula && <p className="text-[10px] text-blue-900 mt-1.5 font-mono leading-tight break-words">{formula}</p>}
     </div>
   );
 }
@@ -299,52 +299,91 @@ function EquitySpark({ proData, antiData }) {
 }
 
 // ── MC Benchmark Histogram (static, from precomputed mc_neutral_means.csv) ────
+const MCRefLabel = ({ viewBox, lines, color, anchor }) => {
+  const { x, y } = viewBox;
+  const xPos = anchor === "end" ? x - 6 : x + 6;
+  return (
+    <g>
+      {lines.map((line, i) => (
+        <text key={i} x={xPos} y={y + 16 + i * 14} fill={color}
+          fontSize={i === 0 ? 11 : 10} fontWeight={i === 0 ? "700" : "400"}
+          textAnchor={anchor}>
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+};
+
 function MCBenchmarkHistogram({ histData, proMeanPct, antiMeanPct, proRank, antiRank }) {
   if (!histData?.length) return null;
+
+  // Compute domain to include both reference lines, with padding
+  const xs = histData.map((d) => d.x);
+  const histMin = Math.min(...xs);
+  const histMax = Math.max(...xs);
+  const spread = histMax - histMin;
+  const domainMin = Math.min(histMin, proMeanPct ?? histMin) - spread * 0.08;
+  const domainMax = Math.max(histMax, antiMeanPct ?? histMax) + spread * 0.08;
+
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={histData} barCategoryGap="0%" margin={{ top: 16, right: 24, left: 60, bottom: 24 }}>
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={histData} barCategoryGap="0%" margin={{ top: 20, right: 50, left: 70, bottom: 30 }}>
         <CartesianGrid vertical={false} stroke="#e5e7eb" strokeDasharray="3 3" />
         <XAxis
           dataKey="x"
           type="number"
-          domain={["auto", "auto"]}
+          domain={[domainMin, domainMax]}
           scale="linear"
           tickFormatter={(v) => `${Number(v).toFixed(3)}%`}
           tick={{ fontSize: 9, fill: "#6b7280" }}
           tickLine={false}
           axisLine={false}
           interval="preserveStartEnd"
-          label={{ value: "Mean Daily Return (%)", position: "insideBottom", offset: -14, fontSize: 11, fill: "#6b7280" }}
+          label={{ value: "Mean Daily Return (%)", position: "insideBottom", offset: -16, fontSize: 11, fill: "#6b7280" }}
         />
         <YAxis
           tick={{ fontSize: 9, fill: "#6b7280" }}
           tickLine={false}
           axisLine={false}
           allowDecimals={false}
-          width={44}
-          label={{ value: "Number of Simulations", angle: -90, position: "insideLeft", offset: 10, fontSize: 11, fill: "#6b7280" }}
+          width={50}
+          label={{ value: "Number of Simulations", angle: -90, position: "insideLeft", offset: 15, fontSize: 11, fill: "#6b7280" }}
         />
         <Tooltip
           formatter={(v) => [v, "Simulations"]}
           labelFormatter={(x) => `Mean return: ${Number(x).toFixed(4)}%`}
           contentStyle={{ fontSize: 11 }}
         />
-        {/* Pro-Trump reference line */}
+        {/* Pro-Trump line — sits far LEFT of the neutral distribution */}
         <ReferenceLine
           x={proMeanPct}
           stroke={C_LOSS}
-          strokeWidth={2}
-          strokeDasharray="5 3"
-          label={{ value: `Pro-Trump (${proRank?.toFixed(1)}th pct)`, position: "insideTopLeft", fontSize: 10, fill: C_LOSS }}
+          strokeWidth={3}
+          label={<MCRefLabel
+            color={C_LOSS}
+            anchor="start"
+            lines={[
+              `Pro-Trump`,
+              `${proMeanPct?.toFixed(4)}%`,
+              `${proRank?.toFixed(1)}th percentile`,
+            ]}
+          />}
         />
-        {/* Anti-Trump reference line */}
+        {/* Anti-Trump line — sits far RIGHT of the neutral distribution */}
         <ReferenceLine
           x={antiMeanPct}
           stroke={C_ANTI}
-          strokeWidth={2}
-          strokeDasharray="5 3"
-          label={{ value: `Anti-Trump (${antiRank?.toFixed(1)}th pct)`, position: "insideTopRight", fontSize: 10, fill: C_ANTI }}
+          strokeWidth={3}
+          label={<MCRefLabel
+            color={C_ANTI}
+            anchor="end"
+            lines={[
+              `Anti-Trump`,
+              `${antiMeanPct?.toFixed(4)}%`,
+              `${antiRank?.toFixed(1)}th percentile`,
+            ]}
+          />}
         />
         <Bar dataKey="count" isAnimationActive={false} radius={[2, 2, 0, 0]} fill={C_PRO} fillOpacity={0.6} />
       </BarChart>
