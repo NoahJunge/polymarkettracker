@@ -1243,20 +1243,21 @@ def print_retro_prosp_comparison(curve_retro, curve_prosp_full, curve_prosp_clea
         print("    retrospective period contains structural differences from the")
         print("    prospective period (different market composition, political context).")
 
-    # P&L summary table
+    # P&L summary table — period deltas (not cumulative)
     subsection("9c — Period P&L Summary")
-    retro_last = curve_retro.iloc[-1]
-    prosp_last = curve_prosp_full.iloc[-1]
-    print(f"  {'Period':<35}  {'Days':>5}  {'Final P&L':>12}  {'Invested':>12}  {'Return':>8}")
-    print(f"  {'─'*35}  {'─'*5}  {'─'*12}  {'─'*12}  {'─'*8}")
-    def _row(label, curve):
-        last = curve.iloc[-1]
-        inv  = last["invested"]
-        ret  = last["total_pnl"] / inv * 100 if inv > 0 else 0
-        print(f"  {label:<35}  {len(curve):>5}  {usd(last['total_pnl']):>12}  {usd(inv):>12}  {ret:>7.2f}%")
+    retro_end_inv = float(curve_retro.iloc[-1]["invested"])  if not curve_retro.empty  else 0.0
+    retro_end_pnl = float(curve_retro.iloc[-1]["total_pnl"]) if not curve_retro.empty else 0.0
+    print(f"  {'Period':<35}  {'Days':>5}  {'Period P&L':>12}  {'Period Invested':>16}  {'Return':>8}")
+    print(f"  {'─'*35}  {'─'*5}  {'─'*12}  {'─'*16}  {'─'*8}")
+    def _row(label, curve, initial_inv=0.0, initial_pnl=0.0):
+        last        = curve.iloc[-1]
+        period_inv  = float(last["invested"])  - initial_inv
+        period_pnl  = float(last["total_pnl"]) - initial_pnl
+        ret         = period_pnl / period_inv * 100 if period_inv > 0 else 0
+        print(f"  {label:<35}  {len(curve):>5}  {usd(period_pnl):>12}  {usd(period_inv):>16}  {ret:>7.2f}%")
     _row(f"Retrospective (before {PROSPECTIVE_START})", curve_retro)
-    _row(f"Prospective — full ({PROSPECTIVE_START}+)", curve_prosp_full)
-    _row(f"Prospective — clean ({CLEAN_START}+)",      curve_prosp_clean)
+    _row(f"Prospective — full ({PROSPECTIVE_START}+)", curve_prosp_full,
+         initial_inv=retro_end_inv, initial_pnl=retro_end_pnl)
     print()
 
 
