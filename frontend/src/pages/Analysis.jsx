@@ -61,9 +61,10 @@ function MetricTile({ label, value, sub, color, formula }) {
 }
 
 // ── figure gallery item ───────────────────────────────────────────────────────
-function FigureCard({ fig }) {
+function FigureCard({ fig, figureVersion }) {
   const [open, setOpen] = useState(false);
   if (!fig.exists) return null;
+  const src = getAnalysisFigureUrl(fig.filename, figureVersion);
 
   return (
     <>
@@ -72,7 +73,7 @@ function FigureCard({ fig }) {
         onClick={() => setOpen(true)}
       >
         <img
-          src={getAnalysisFigureUrl(fig.filename)}
+          src={src}
           alt={fig.title}
           className="w-full object-contain"
           loading="lazy"
@@ -103,7 +104,7 @@ function FigureCard({ fig }) {
               >×</button>
             </div>
             <img
-              src={getAnalysisFigureUrl(fig.filename)}
+              src={src}
               alt={fig.title}
               className="w-full object-contain max-h-[80vh]"
             />
@@ -447,6 +448,7 @@ export default function Analysis() {
   const lastRun = status?.last_run_utc
     ? new Date(status.last_run_utc).toLocaleString()
     : "Never";
+  const figureVersion = status?.last_run_utc || "";
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -785,7 +787,7 @@ export default function Analysis() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {proFigs.map((fig) => (
-                    <FigureCard key={fig.filename} fig={fig} />
+                    <FigureCard key={fig.filename} fig={fig} figureVersion={figureVersion} />
                   ))}
                 </div>
               </>
@@ -1060,7 +1062,7 @@ export default function Analysis() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {antiFigs.map((fig) => (
-                    <FigureCard key={fig.filename} fig={fig} />
+                    <FigureCard key={fig.filename} fig={fig} figureVersion={figureVersion} />
                   ))}
                 </div>
               </div>
@@ -1280,7 +1282,7 @@ export default function Analysis() {
                   </p>
                 </div>
                 <img
-                  src={getAnalysisFigureUrl("fig12_strategy_comparison.png")}
+                  src={getAnalysisFigureUrl("fig12_strategy_comparison.png", figureVersion)}
                   alt="Full series both strategies vs neutral benchmark"
                   className="w-full object-contain"
                 />
@@ -1295,7 +1297,7 @@ export default function Analysis() {
                   </p>
                 </div>
                 <img
-                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison.png")}
+                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison.png", figureVersion)}
                   alt="Pro-Trump full series vs neutral benchmark fan"
                   className="w-full object-contain"
                 />
@@ -1310,7 +1312,7 @@ export default function Analysis() {
                   </p>
                 </div>
                 <img
-                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison_anti.png")}
+                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison_anti.png", figureVersion)}
                   alt="Anti-Trump full series vs neutral benchmark fan"
                   className="w-full object-contain"
                 />
@@ -1331,7 +1333,7 @@ export default function Analysis() {
                     </p>
                   </div>
                   <img
-                    src={getAnalysisFigureUrl("fig11_mc_benchmark.png")}
+                    src={getAnalysisFigureUrl("fig11_mc_benchmark.png", figureVersion)}
                     alt="Pro-Trump Monte Carlo benchmark"
                     className="w-full object-contain"
                   />
@@ -1347,7 +1349,7 @@ export default function Analysis() {
                     </p>
                   </div>
                   <img
-                    src={getAnalysisFigureUrl("fig11_mc_benchmark_anti.png")}
+                    src={getAnalysisFigureUrl("fig11_mc_benchmark_anti.png", figureVersion)}
                     alt="Anti-Trump Monte Carlo benchmark"
                     className="w-full object-contain"
                   />
