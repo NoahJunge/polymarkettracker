@@ -361,13 +361,14 @@ function MCBenchmarkHistogram({ histData, proMeanPct, antiMeanPct, proRank, anti
           x={proMeanPct}
           stroke={C_LOSS}
           strokeWidth={3}
+          ifOverflow="extendDomain"
           label={<MCRefLabel
             color={C_LOSS}
             anchor="start"
             lines={[
               `Pro-Trump`,
               `${proMeanPct?.toFixed(4)}%`,
-              `${proRank?.toFixed(1)}th percentile`,
+              `${proRank?.toFixed(1)}th pct`,
             ]}
           />}
         />
@@ -376,13 +377,14 @@ function MCBenchmarkHistogram({ histData, proMeanPct, antiMeanPct, proRank, anti
           x={antiMeanPct}
           stroke={C_ANTI}
           strokeWidth={3}
+          ifOverflow="extendDomain"
           label={<MCRefLabel
             color={C_ANTI}
             anchor="end"
             lines={[
               `Anti-Trump`,
               `${antiMeanPct?.toFixed(4)}%`,
-              `${antiRank?.toFixed(1)}th percentile`,
+              `${antiRank?.toFixed(1)}th pct`,
             ]}
           />}
         />
@@ -463,14 +465,9 @@ export default function Analysis() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400">Last run: {lastRun}</span>
-          <button
-            onClick={handleRunAnalysis}
-            disabled={running}
-            className="px-4 py-2 text-sm font-medium rounded-lg text-white transition-colors disabled:opacity-60"
-            style={{ background: running ? "#a78bfa" : C_PRO }}
-          >
-            {running ? "Running…" : "Run Analysis"}
-          </button>
+          <span className="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 border border-amber-200 font-medium">
+            Experiment closed · Data frozen 1 May 2026
+          </span>
         </div>
       </div>
 
@@ -548,15 +545,17 @@ export default function Analysis() {
                     />
                     <MetricTile
                       label="MC Percentile Rank"
-                      value={mcBenchmark ? `${mcBenchmark.pct_rank.toFixed(1)}th` : "—"}
-                      sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
+                      value={mcBenchmark?.full_pro_pct_rank != null
+                        ? `${mcBenchmark.full_pro_pct_rank.toFixed(1)}th`
+                        : mcBenchmark ? `${mcBenchmark.pct_rank.toFixed(1)}th` : "—"}
+                      sub={mcBenchmark ? `Full series · ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
                       color={
                         !mcBenchmark ? "#111827"
-                        : mcBenchmark.pct_rank <= 5 ? C_LOSS
-                        : mcBenchmark.pct_rank >= 95 ? C_GAIN
+                        : (mcBenchmark.full_pro_pct_rank ?? mcBenchmark.pct_rank) <= 5 ? C_LOSS
+                        : (mcBenchmark.full_pro_pct_rank ?? mcBenchmark.pct_rank) >= 95 ? C_GAIN
                         : "#111827"
                       }
-                      formula="% of 50/50 random-direction sims with lower mean return"
+                      formula="% of 50/50 random-direction sims with lower mean daily return (full 287-day series)"
                     />
                     <MetricTile
                       label="Mean Daily Return"
@@ -764,10 +763,10 @@ export default function Analysis() {
             </div>
             <div className="mt-4 rounded-lg bg-violet-50 border border-violet-200 px-4 py-3 text-sm text-violet-800">
               <span className="font-semibold">Primary test: </span>
-              Abnormal returns (pro-Trump minus neutral benchmark mean) are tested against zero.
-              The OLS equity curve shows a statistically significant downward slope (p &lt; 0.001), consistent with H₁b.
-              {mcBenchmark && mcBenchmark.pct_rank <= 5 && (
-                <span> The MC percentile rank ({mcBenchmark.pct_rank.toFixed(1)}th) confirms pro-Trump systematically underperforms a random-direction strategy — consistent with crypto-bro overvaluation of pro-Trump outcomes.</span>
+              One-sample t-test on mean daily return vs. H₀: μ = 0. A significantly negative t-statistic supports H₁b — pro-Trump outcomes are systematically overpriced.
+              The OLS trend regression shows a statistically significant downward slope (p &lt; 0.001), consistent with H₁b.
+              {mcBenchmark && (mcBenchmark.full_pro_pct_rank ?? mcBenchmark.pct_rank) <= 5 && (
+                <span> The full-series MC percentile rank ({(mcBenchmark.full_pro_pct_rank ?? mcBenchmark.pct_rank).toFixed(1)}th) confirms the directional pro-Trump choice systematically destroys value relative to a coin-flip strategy.</span>
               )}
             </div>
           </Card>
@@ -798,15 +797,7 @@ export default function Analysis() {
 
       {activeTab === "pro" && !loading && !metrics && (
         <Card className="p-12 text-center">
-          <p className="text-slate-500 text-sm mb-4">No analysis results found.</p>
-          <button
-            onClick={handleRunAnalysis}
-            disabled={running}
-            className="px-5 py-2.5 text-sm font-medium rounded-lg text-white"
-            style={{ background: C_PRO }}
-          >
-            {running ? "Running…" : "Run Analysis Now"}
-          </button>
+          <p className="text-slate-500 text-sm">No analysis results found. Analysis data is frozen at 1 May 2026.</p>
         </Card>
       )}
 
@@ -816,15 +807,7 @@ export default function Analysis() {
       )}
       {activeTab === "anti" && !loading && !metrics && (
         <Card className="p-12 text-center">
-          <p className="text-slate-500 text-sm mb-4">No analysis results found.</p>
-          <button
-            onClick={handleRunAnalysis}
-            disabled={running}
-            className="px-5 py-2.5 text-sm font-medium rounded-lg text-white"
-            style={{ background: C_ANTI }}
-          >
-            {running ? "Running…" : "Run Analysis Now"}
-          </button>
+          <p className="text-slate-500 text-sm">No analysis results found. Analysis data is frozen at 1 May 2026.</p>
         </Card>
       )}
 
@@ -856,15 +839,17 @@ export default function Analysis() {
                     />
                     <MetricTile
                       label="MC Percentile Rank"
-                      value={antiM.mc_pct_rank != null ? `${Number(antiM.mc_pct_rank).toFixed(1)}th` : "—"}
-                      sub={mcBenchmark ? `of ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
+                      value={mcBenchmark?.full_anti_pct_rank != null
+                        ? `${mcBenchmark.full_anti_pct_rank.toFixed(1)}th`
+                        : antiM.mc_pct_rank != null ? `${Number(antiM.mc_pct_rank).toFixed(1)}th` : "—"}
+                      sub={mcBenchmark ? `Full series · ${mcBenchmark.n_sims.toLocaleString()} neutral sims` : "Run analysis first"}
                       color={
-                        antiM.mc_pct_rank == null ? "#111827"
-                        : antiM.mc_pct_rank <= 5 ? C_LOSS
-                        : antiM.mc_pct_rank >= 95 ? C_GAIN
+                        mcBenchmark?.full_anti_pct_rank == null && antiM.mc_pct_rank == null ? "#111827"
+                        : (mcBenchmark?.full_anti_pct_rank ?? antiM.mc_pct_rank) <= 5 ? C_LOSS
+                        : (mcBenchmark?.full_anti_pct_rank ?? antiM.mc_pct_rank) >= 95 ? C_GAIN
                         : "#111827"
                       }
-                      formula="% of 50/50 random-direction sims with lower mean return"
+                      formula="% of 50/50 random-direction sims with lower mean daily return (full 287-day series)"
                     />
                     <MetricTile
                       label="Mean Daily Return"
@@ -926,47 +911,50 @@ export default function Analysis() {
           })()}
 
           {/* MC percentile verdict */}
-          {antiM.mc_pct_rank != null && (
+          {(mcBenchmark?.full_anti_pct_rank != null || antiM.mc_pct_rank != null) && (
             <Card className="p-5">
               <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
                 Neutral Benchmark Comparison
               </h2>
               <p className="text-xs text-slate-400 mb-4">
-                Anti-Trump strategy compared to the same 10,000 neutral 50/50 simulations.
+                Anti-Trump strategy (full 287-day series) compared to 10,000 neutral 50/50 simulations.
               </p>
-              <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${
-                antiM.mc_pct_rank >= 95
-                  ? "bg-green-50 border border-green-200"
-                  : antiM.mc_pct_rank <= 5
-                  ? "bg-red-50 border border-red-200"
-                  : "bg-slate-50 border border-slate-200"
-              }`}>
-                <div>
-                  {antiM.mc_pct_rank >= 95 ? (
-                    <>
-                      <span className="font-semibold text-green-800">H₁b supported. </span>
-                      <span className="text-green-700">
-                        The anti-Trump strategy sits in the top {(100 - antiM.mc_pct_rank).toFixed(1)}% of {mcBenchmark?.n_sims?.toLocaleString() ?? "10,000"} neutral simulations.
-                        Systematically betting against Trump captures the overpricing premium — consistent with crypto-bro buyers inflating pro-Trump prices above their true probability.
-                      </span>
-                    </>
-                  ) : antiM.mc_pct_rank <= 5 ? (
-                    <>
-                      <span className="font-semibold text-red-800">H₁a indicated. </span>
-                      <span className="text-red-700">
-                        Anti-Trump underperforms the neutral benchmark — pro-Trump outcomes are underpriced.
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-slate-700">H₀ not rejected. </span>
-                      <span className="text-slate-600">
-                        Anti-Trump returns fall within the typical range of neutral benchmark outcomes.
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+              {(() => {
+                const rank = mcBenchmark?.full_anti_pct_rank ?? antiM.mc_pct_rank;
+                return (
+                  <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${
+                    rank >= 95 ? "bg-green-50 border border-green-200"
+                    : rank <= 5 ? "bg-red-50 border border-red-200"
+                    : "bg-slate-50 border border-slate-200"
+                  }`}>
+                    <div>
+                      {rank >= 95 ? (
+                        <>
+                          <span className="font-semibold text-green-800">H₁b supported. </span>
+                          <span className="text-green-700">
+                            The anti-Trump strategy ranks at the {rank.toFixed(1)}th percentile of {mcBenchmark?.n_sims?.toLocaleString() ?? "10,000"} neutral simulations (full 287-day series).
+                            Systematically betting against Trump captures the overpricing premium — consistent with politically motivated traders inflating pro-Trump prices above their true probability.
+                          </span>
+                        </>
+                      ) : rank <= 5 ? (
+                        <>
+                          <span className="font-semibold text-red-800">H₁a indicated. </span>
+                          <span className="text-red-700">
+                            Anti-Trump underperforms the neutral benchmark — pro-Trump outcomes are underpriced.
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-semibold text-slate-700">H₀ not rejected. </span>
+                          <span className="text-slate-600">
+                            Anti-Trump returns fall within the typical range of neutral benchmark outcomes.
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
           )}
 
@@ -1043,10 +1031,10 @@ export default function Analysis() {
               ))}
             </div>
             <div className="mt-4 rounded-lg px-4 py-3 text-sm" style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" }}>
-              <span className="font-semibold">Anti-Trump interpretation: </span>
-              Flipping the strategy direction converts losses into gains. If anti-Trump significantly outperforms neutral,
-              this directly supports H₁b — politically motivated (crypto-bro) traders systematically overprice pro-Trump outcomes,
-              and the <em>informed</em> trade is to bet against them.
+              <span className="font-semibold">Primary test (H₁b): </span>
+              One-sample t-test on mean daily return vs. H₀: μ = 0. A significantly <em>positive</em> t-statistic on the anti-Trump strategy
+              supports H₁b — the mirror of pro-Trump losses is anti-Trump gains, confirming that politically motivated (crypto-bro) traders
+              systematically overprice pro-Trump outcomes. The informed trade is to bet against them.
             </div>
           </Card>
 
