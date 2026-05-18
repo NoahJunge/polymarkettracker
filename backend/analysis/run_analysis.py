@@ -1396,7 +1396,9 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
                    pct_rank_mc=None,
                    curve_clean_anti=None, curve_full_anti=None,
                    metrics_anti=None, pct_rank_mc_anti=None,
-                   pnl_sims_mc=None):
+                   pnl_sims_mc=None,
+                   full_pro_mean=None, full_anti_mean=None,
+                   full_pro_pct_rank=None, full_anti_pct_rank=None):
     # Equity curves
     curve_clean.to_csv(output_dir / "equity_curve_clean.csv", index=False)
     curve_full.to_csv( output_dir / "equity_curve_full.csv",  index=False)
@@ -1435,13 +1437,18 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
     # MC neutral summary stats
     if pnl_sims_mc is not None and mean_return_sims is not None:
         final_pnls = pnl_sims_mc[:, -1]
-        pd.DataFrame([{
-            "mc_mean_daily_return": float(mean_return_sims.mean()),
-            "mc_avg_final_pnl":     float(final_pnls.mean()),
-            "mc_p5_final_pnl":      float(np.percentile(final_pnls, 5)),
-            "mc_p95_final_pnl":     float(np.percentile(final_pnls, 95)),
-            "mc_median_final_pnl":  float(np.median(final_pnls)),
-        }]).to_csv(output_dir / "mc_neutral_summary.csv", index=False)
+        row = {
+            "mc_mean_daily_return":  float(mean_return_sims.mean()),
+            "mc_avg_final_pnl":      float(final_pnls.mean()),
+            "mc_p5_final_pnl":       float(np.percentile(final_pnls, 5)),
+            "mc_p95_final_pnl":      float(np.percentile(final_pnls, 95)),
+            "mc_median_final_pnl":   float(np.median(final_pnls)),
+            "full_pro_mean":         float(full_pro_mean)      if full_pro_mean      is not None else None,
+            "full_anti_mean":        float(full_anti_mean)     if full_anti_mean     is not None else None,
+            "full_pro_pct_rank":     float(full_pro_pct_rank)  if full_pro_pct_rank  is not None else None,
+            "full_anti_pct_rank":    float(full_anti_pct_rank) if full_anti_pct_rank is not None else None,
+        }
+        pd.DataFrame([row]).to_csv(output_dir / "mc_neutral_summary.csv", index=False)
 
     # Abnormal returns series
     if ar_series is not None and r_protrump is not None and r_neutral_mean is not None:
@@ -1515,6 +1522,12 @@ def main():
     r_anti           = curve_clean_anti["daily_return"].dropna().values
     pct_rank_mc_anti = float((mean_sims < r_anti.mean()).mean() * 100)
 
+    # Full-series means and percentile ranks (for full-series histogram)
+    full_pro_mean      = float(curve_full["daily_return"].dropna().mean())
+    full_anti_mean     = float(curve_full_anti["daily_return"].dropna().mean())
+    full_pro_pct_rank  = float((mean_sims < full_pro_mean).mean() * 100)
+    full_anti_pct_rank = float((mean_sims < full_anti_mean).mean() * 100)
+
     # ── Print all analysis sections ───────────────────────────────────────────
     print_portfolio_overview(curve_clean, mkt_pnl)
     print_diagnostics_summary(curve_clean)
@@ -1573,7 +1586,9 @@ def main():
                    pct_rank_mc=pct_rank_mc,
                    curve_clean_anti=curve_clean_anti, curve_full_anti=curve_full_anti,
                    metrics_anti=metrics_anti, pct_rank_mc_anti=pct_rank_mc_anti,
-                   pnl_sims_mc=pnl_sims_mc)
+                   pnl_sims_mc=pnl_sims_mc,
+                   full_pro_mean=full_pro_mean, full_anti_mean=full_anti_mean,
+                   full_pro_pct_rank=full_pro_pct_rank, full_anti_pct_rank=full_anti_pct_rank)
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")

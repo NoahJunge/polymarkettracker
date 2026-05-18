@@ -1,2 +1,2 @@
-mc_mean_daily_return,mc_avg_final_pnl,mc_p5_final_pnl,mc_p95_final_pnl,mc_median_final_pnl
--3.8777563431943034e-05,-0.7871913364400044,-734.298807281493,752.1275209960947,0.7863466796885632
+mc_mean_daily_return,mc_avg_final_pnl,mc_p5_final_pnl,mc_p95_final_pnl,mc_median_final_pnl,full_pro_mean,full_anti_mean,full_pro_pct_rank,full_anti_pct_rank
+-3.8777563431943034e-05,-0.7871913364400044,-734.298807281493,752.1275209960947,0.7863466796885632,-0.0009818411192184415,0.0002788711449383648,0.3,99.68

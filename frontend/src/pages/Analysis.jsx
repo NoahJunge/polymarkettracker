@@ -1206,6 +1206,35 @@ export default function Analysis() {
             </Card>
           )}
 
+          {/* Full-series histogram */}
+          {mcBenchmark?.histogram && mcBenchmark.full_pro_mean_pct != null && (
+            <Card className="p-5">
+              <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                Distribution of Neutral Benchmark Mean Returns — Full Series (287 days)
+              </h2>
+              <p className="text-xs text-slate-400 mb-4">
+                Same {mcBenchmark.n_sims.toLocaleString()} neutral simulations, but reference lines show where the strategies land using their full 287-day mean daily return (vs 96-day prospective above).
+              </p>
+              <MCBenchmarkHistogram
+                histData={mcBenchmark.histogram}
+                proMeanPct={mcBenchmark.full_pro_mean_pct}
+                antiMeanPct={mcBenchmark.full_anti_mean_pct}
+                proRank={mcBenchmark.full_pro_pct_rank}
+                antiRank={mcBenchmark.full_anti_pct_rank}
+              />
+              <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: C_LOSS }}></span>
+                  Pro-Trump ({mcBenchmark.full_pro_pct_rank?.toFixed(1)}th pct) — full 287-day series
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: C_ANTI }}></span>
+                  Anti-Trump ({mcBenchmark.full_anti_pct_rank?.toFixed(1)}th pct) — full 287-day series
+                </span>
+              </div>
+            </Card>
+          )}
+
           {/* Verdict banner */}
           {mcBenchmark && (
             <Card className="p-4">

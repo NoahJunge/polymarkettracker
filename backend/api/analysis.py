@@ -204,6 +204,11 @@ async def get_metrics():
             mc_benchmark["mc_median_final_pnl"] = round(float(s["mc_median_final_pnl"]), 4)
             mc_benchmark["mc_p5_final_pnl"]     = round(float(s["mc_p5_final_pnl"]),     4)
             mc_benchmark["mc_p95_final_pnl"]    = round(float(s["mc_p95_final_pnl"]),    4)
+            if not pd.isna(s.get("full_pro_mean")):
+                mc_benchmark["full_pro_mean_pct"]    = round(float(s["full_pro_mean"])  * 100, 6)
+                mc_benchmark["full_anti_mean_pct"]   = round(float(s["full_anti_mean"]) * 100, 6)
+                mc_benchmark["full_pro_pct_rank"]    = round(float(s["full_pro_pct_rank"]),  2)
+                mc_benchmark["full_anti_pct_rank"]   = round(float(s["full_anti_pct_rank"]), 2)
         result["mc_benchmark"] = mc_benchmark
     if ar_path.exists():
         ar_df = pd.read_csv(ar_path)
