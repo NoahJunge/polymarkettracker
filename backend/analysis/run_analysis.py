@@ -413,7 +413,7 @@ def compute_abnormal_returns(curve, dr_sims):
 
 
 # ── PER-MARKET P&L ────────────────────────────────────────────────────────────
-def compute_per_market_pnl(dca, price_lookup, snaps, end_dt=None):
+def compute_per_market_pnl(dca, price_lookup, snaps, end_dt=None, mkts=None):
     """Unrealised P&L per market using latest available snapshot price at or before end_dt."""
     opens  = dca[dca["action"] == "OPEN"].copy()
     # Cap opens at experiment end date so post-experiment trades don't affect results
@@ -429,6 +429,11 @@ def compute_per_market_pnl(dca, price_lookup, snaps, end_dt=None):
     latest_map = {row.market_id: {"yes_price": row.yes_price, "no_price": row.no_price}
                   for row in latest.itertuples(index=False)}
 
+    # Build question lookup from markets metadata if available
+    q_map = {}
+    if mkts is not None and "question" in mkts.columns:
+        q_map = {row.market_id: row.question for row in mkts.itertuples(index=False)}
+
     result = []
     for (mid, side), grp in opens.groupby(["market_id", "side"]):
         total_qty   = grp["quantity"].sum()
@@ -441,6 +446,7 @@ def compute_per_market_pnl(dca, price_lookup, snaps, end_dt=None):
         unrealised  = total_qty * (current - avg_entry)
         result.append({
             "market_id":    mid,
+            "question":     q_map.get(mid, mid),
             "side":         side,
             "total_qty":    total_qty,
             "avg_entry":    avg_entry,
@@ -1022,24 +1028,57 @@ def fig6_drawdown(curve, filename="fig6_drawdown.png"):
     save_fig(fig, filename)
 
 
-def fig7_market_pnl(mkt_pnl, top_n=20):
-    """Fig 7: Top/bottom markets by unrealised P&L."""
-    top  = mkt_pnl.nlargest(top_n,  "unrealised_pnl")
-    bot  = mkt_pnl.nsmallest(top_n, "unrealised_pnl")
-    combined = pd.concat([bot, top]).drop_duplicates("market_id")
-    combined = combined.sort_values("unrealised_pnl")
+def fig7_market_pnl(mkt_pnl, top_n=3):
+    """Fig 7: Top 3 and bottom 3 markets by unrealised P&L for pro-Trump and anti-Trump."""
+    def _wrap(text, width=55):
+        """Wrap long question text."""
+        import textwrap
+        return "\n".join(textwrap.wrap(str(text), width=width))
 
-    fig, ax = plt.subplots(figsize=(9, max(6, len(combined) * 0.28)))
-    colors  = [C_GAIN if v >= 0 else C_LOSS for v in combined["unrealised_pnl"]]
-    labels  = [f"{row.market_id[:28]}  ({row.side})" for row in combined.itertuples()]
-    ax.barh(labels, combined["unrealised_pnl"], color=colors, alpha=0.85, edgecolor="white", height=0.7)
-    ax.axvline(x=0, color=C_TEXT, linewidth=0.9)
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.1f}"))
-    style_ax(ax,
-        title=f"Figure 7 — Per-Market Unrealised P&L (Top/Bottom {top_n})\n"
-              "Green = market is profitable; Red = market is losing",
-        xlabel="Unrealised P&L (USD)", ylabel="Market ID (side)")
-    ax.tick_params(axis="y", labelsize=7)
+    # Pro-Trump: top_n winners and losers
+    pro_top = mkt_pnl.nlargest(top_n, "unrealised_pnl").copy()
+    pro_bot = mkt_pnl.nsmallest(top_n, "unrealised_pnl").copy()
+
+    # Anti-Trump: flip the sign (opposite direction)
+    anti = mkt_pnl.copy()
+    anti["unrealised_pnl"] = -anti["unrealised_pnl"]
+    anti_top = anti.nlargest(top_n, "unrealised_pnl").copy()
+    anti_bot = anti.nsmallest(top_n, "unrealised_pnl").copy()
+
+    def _make_labels(df):
+        return [_wrap(row.question if hasattr(row, "question") and row.question != row.market_id
+                      else row.market_id, width=55)
+                for row in df.itertuples()]
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, max(5, top_n * 1.4 + 2.5)))
+
+    for ax, top_df, bot_df, strategy_label, gain_color, loss_color in [
+        (axes[0], pro_top, pro_bot, "Pro-Trump", C_GAIN, C_LOSS),
+        (axes[1], anti_top, anti_bot, "Anti-Trump", "#f97316", "#dc2626"),
+    ]:
+        combined = pd.concat([bot_df, top_df]).drop_duplicates("market_id").sort_values("unrealised_pnl")
+        labels   = _make_labels(combined)
+        colors   = [gain_color if v >= 0 else loss_color for v in combined["unrealised_pnl"]]
+        bars = ax.barh(range(len(combined)), combined["unrealised_pnl"],
+                       color=colors, alpha=0.85, edgecolor="white", height=0.65)
+        ax.set_yticks(range(len(combined)))
+        ax.set_yticklabels(labels, fontsize=7.5, linespacing=1.3)
+        ax.axvline(x=0, color=C_TEXT, linewidth=0.9)
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.1f}"))
+        # Value labels on bars
+        for bar, val in zip(bars, combined["unrealised_pnl"]):
+            xpos = bar.get_width() + (0.5 if val >= 0 else -0.5)
+            ax.text(xpos, bar.get_y() + bar.get_height() / 2,
+                    f"${val:+.1f}", va="center",
+                    ha="left" if val >= 0 else "right", fontsize=7.5,
+                    color=gain_color if val >= 0 else loss_color, fontweight="600")
+        ax.set_title(f"{strategy_label}\nTop {top_n} Winning & Losing Markets", fontsize=11, fontweight="700")
+        ax.set_xlabel("Unrealised P&L (USD)", fontsize=9)
+        ax.tick_params(axis="x", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    fig.suptitle("Figure 7 — Per-Market Unrealised P&L · As of 1 May 2026", fontsize=12, fontweight="700", y=1.01)
     fig.tight_layout()
     save_fig(fig, "fig7_market_pnl.png")
 
@@ -1521,7 +1560,7 @@ def main():
           f"pro-Trump at {pct_rank_mc:.1f}th percentile of neutral benchmark")
 
     # ── Per-market P&L ────────────────────────────────────────────────────────
-    mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps, end_dt=EXPERIMENT_END)
+    mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps, end_dt=EXPERIMENT_END, mkts=mkts)
 
     # ── Risk metrics (clean series as primary) ────────────────────────────────
     metrics      = compute_risk_metrics(curve_clean,      label="CLEAN SERIES")
