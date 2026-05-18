@@ -413,14 +413,18 @@ def compute_abnormal_returns(curve, dr_sims):
 
 
 # ── PER-MARKET P&L ────────────────────────────────────────────────────────────
-def compute_per_market_pnl(dca, price_lookup, snaps):
-    """Unrealised P&L per market using latest available snapshot price."""
+def compute_per_market_pnl(dca, price_lookup, snaps, end_dt=None):
+    """Unrealised P&L per market using latest available snapshot price at or before end_dt."""
     opens  = dca[dca["action"] == "OPEN"].copy()
+    # Cap opens at experiment end date so post-experiment trades don't affect results
+    if end_dt is not None:
+        opens = opens[pd.to_datetime(opens["date"]) <= pd.to_datetime(end_dt)]
+    snaps_capped = snaps if end_dt is None else snaps[pd.to_datetime(snaps["date"]) <= pd.to_datetime(end_dt)]
     latest = (
-        snaps.sort_values("date")
-             .groupby("market_id")
-             .last()
-             .reset_index()[["market_id", "yes_price", "no_price"]]
+        snaps_capped.sort_values("date")
+                    .groupby("market_id")
+                    .last()
+                    .reset_index()[["market_id", "yes_price", "no_price"]]
     )
     latest_map = {row.market_id: {"yes_price": row.yes_price, "no_price": row.no_price}
                   for row in latest.itertuples(index=False)}
@@ -1474,6 +1478,9 @@ def main():
 
     # ── Load ─────────────────────────────────────────────────────────────────
     dca, snaps, subs, mkts = load_data()
+    # Cap all input data at the experiment end date to freeze results permanently
+    snaps = snaps[pd.to_datetime(snaps["date"]) <= pd.to_datetime(EXPERIMENT_END)].copy()
+    dca   = dca[pd.to_datetime(dca["date"])   <= pd.to_datetime(EXPERIMENT_END)].copy()
     daily_snaps, price_lookup = build_price_table(snaps)
 
     # ── Build equity curves ───────────────────────────────────────────────────
@@ -1514,7 +1521,7 @@ def main():
           f"pro-Trump at {pct_rank_mc:.1f}th percentile of neutral benchmark")
 
     # ── Per-market P&L ────────────────────────────────────────────────────────
-    mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps)
+    mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps, end_dt=EXPERIMENT_END)
 
     # ── Risk metrics (clean series as primary) ────────────────────────────────
     metrics      = compute_risk_metrics(curve_clean,      label="CLEAN SERIES")
