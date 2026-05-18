@@ -1240,24 +1240,56 @@ export default function Analysis() {
             </Card>
           )}
 
-          {/* Combined full-series chart — both strategies vs MC fan */}
-          {figures.find((f) => f.filename === "fig12_strategy_comparison.png")?.exists && (
-            <Card className="overflow-hidden">
-              <div className="p-4 border-b border-slate-100">
-                <p className="text-sm font-semibold text-slate-700">Full Series — Pro-Trump &amp; Anti-Trump vs Neutral Benchmark</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Both strategies plotted against the 10,000-simulation neutral fan (5–95th and 25–75th percentile bands) across the full 287-day observation window.
-                </p>
-              </div>
-              <img
-                src={getAnalysisFigureUrl("fig12_strategy_comparison.png")}
-                alt="Full series both strategies vs neutral benchmark"
-                className="w-full object-contain"
-              />
-            </Card>
-          )}
+          {/* Full-series charts — combined and individual */}
+          <div className="space-y-4">
+            {figures.find((f) => f.filename === "fig12_strategy_comparison.png")?.exists && (
+              <Card className="overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-700">Full Series — Pro-Trump &amp; Anti-Trump vs Neutral Benchmark</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Both strategies plotted against the 10,000-simulation neutral fan (5–95th and 25–75th percentile bands) across the full 287-day observation window.
+                  </p>
+                </div>
+                <img
+                  src={getAnalysisFigureUrl("fig12_strategy_comparison.png")}
+                  alt="Full series both strategies vs neutral benchmark"
+                  className="w-full object-contain"
+                />
+              </Card>
+            )}
+            {figures.find((f) => f.filename === "fig8_mc_equity_comparison.png")?.exists && (
+              <Card className="overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-700">Pro-Trump — Full Series vs Neutral Benchmark Fan</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Pro-Trump cumulative P&L (full 287-day series) overlaid on the neutral simulation fan. Shaded bands = 5–95th and 25–75th percentile of 10,000 neutral sims.
+                  </p>
+                </div>
+                <img
+                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison.png")}
+                  alt="Pro-Trump full series vs neutral benchmark fan"
+                  className="w-full object-contain"
+                />
+              </Card>
+            )}
+            {figures.find((f) => f.filename === "fig8_mc_equity_comparison_anti.png")?.exists && (
+              <Card className="overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-700">Anti-Trump — Full Series vs Neutral Benchmark Fan</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Anti-Trump cumulative P&L (full 287-day series) overlaid on the same neutral simulation fan. Anti-Trump tracks the upper tail of neutral outcomes throughout.
+                  </p>
+                </div>
+                <img
+                  src={getAnalysisFigureUrl("fig8_mc_equity_comparison_anti.png")}
+                  alt="Anti-Trump full series vs neutral benchmark fan"
+                  className="w-full object-contain"
+                />
+              </Card>
+            )}
+          </div>
 
-          {/* Per-strategy MC benchmark figures */}
+          {/* Per-strategy MC benchmark figures (histogram + daily fan) */}
           {figures.some((f) => (f.filename === "fig11_mc_benchmark.png" || f.filename === "fig11_mc_benchmark_anti.png") && f.exists) && (
             <div className="space-y-4">
               {figures.find((f) => f.filename === "fig11_mc_benchmark.png")?.exists && (
