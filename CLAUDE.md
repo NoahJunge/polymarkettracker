@@ -182,19 +182,29 @@ All tests run in `backend/analysis/run_analysis.py`. Results visible at `/analys
 
 ## 5. Thesis Structure & Writing Status
 
+**Thesis document location:** `/Users/Noah/Downloads/main (3).tex` (or latest version in Downloads). Always read the current `.tex` file before any writing assistance — do not rely solely on this summary.
+
 ### Abstract — WRITTEN
-### Introduction — WRITTEN (missing methodology overview, contribution paragraph, structure section)
-### Literature Review — PARTIALLY WRITTEN
+### Introduction — WRITTEN (motivation, H₀/H₁, methodology overview, contributions, report structure all complete)
+### Literature Review — WRITTEN
 - ✅ Prediction Markets
 - ✅ Online and Decentralized Prediction Markets
 - ✅ Market Efficiency and Information Aggregation
-- ⬜ Political Polarization and Ideological Bias — **TODO**
-- ⬜ Bias and Inefficiencies in Prediction Markets — **TODO**
+- ✅ Political Polarization and Ideological Bias
 
-### Method — WRITTEN (drafted March 2026)
-### Results — **EMPTY, TODO**
-### Discussion — **EMPTY, TODO**
-### Conclusion — **EMPTY, TODO**
+### Method — PARTIALLY WRITTEN (drafted, but several subsections need updating)
+Key issues per subsection:
+- **Research Design** — too verbose, needs tightening
+- **Data Collection** — OUTDATED: must explain CLOB retrospective + Jan 26–Feb 21 gap fill (done May 15 2026)
+- **Simulation Architecture** — incorrectly implies automated scheduler; collection was operator-triggered daily (manually)
+- **Simulation Framework** — still references "pro-Trump" as primary; thesis foregrounds anti-Trump
+- **Statistical Analysis** — formulas need checking; references pro-Trump throughout; update T=96
+- **Return Measurement, Market Selection, Limitations** — reasonably complete
+
+### Results — PARTIALLY WRITTEN (skeleton with outdated numbers — needs full rewrite with current data)
+### Discussion — NEAR-EMPTY (headers only)
+### Conclusion — EMPTY, TODO
+### Perspectives — HEADERS ONLY
 
 ---
 
