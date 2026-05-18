@@ -1107,37 +1107,71 @@ export default function Analysis() {
             </div>
           </Card>
 
-          {/* Static stats tiles */}
+          {/* Strategy stats tiles */}
           {mcBenchmark && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <MetricTile
-                label="Pro-Trump Mean Return"
-                value={fmtPct(mcBenchmark.pro_mean_pct, 4)}
-                sub="Actual daily mean"
-                color={mcBenchmark.pro_mean_pct >= 0 ? C_GAIN : C_LOSS}
-                formula="mean of daily_return for 96-day prospective series"
-              />
-              <MetricTile
-                label="Anti-Trump Mean Return"
-                value={fmtPct(mcBenchmark.anti_mean_pct, 4)}
-                sub="Counterfactual daily mean"
-                color={mcBenchmark.anti_mean_pct >= 0 ? C_GAIN : C_LOSS}
-                formula="same trades, flipped YES↔NO direction"
-              />
-              <MetricTile
-                label="Pro-Trump Percentile"
-                value={`${mcBenchmark.pct_rank.toFixed(1)}th`}
-                sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
-                color={mcBenchmark.pct_rank <= 5 ? C_LOSS : "#111827"}
-                formula="% of neutral sims with lower mean return"
-              />
-              <MetricTile
-                label="Anti-Trump Percentile"
-                value={mcBenchmark.anti_pct_rank != null ? `${mcBenchmark.anti_pct_rank.toFixed(1)}th` : "—"}
-                sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
-                color={mcBenchmark.anti_pct_rank >= 95 ? C_GAIN : "#111827"}
-                formula="% of neutral sims with lower mean return"
-              />
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Directional Strategies (96-day prospective series)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <MetricTile
+                  label="Pro-Trump Mean Return"
+                  value={fmtPct(mcBenchmark.pro_mean_pct, 4)}
+                  sub="Daily mean · prospective"
+                  color={mcBenchmark.pro_mean_pct >= 0 ? C_GAIN : C_LOSS}
+                  formula="mean of daily_return for 96-day prospective series"
+                />
+                <MetricTile
+                  label="Anti-Trump Mean Return"
+                  value={fmtPct(mcBenchmark.anti_mean_pct, 4)}
+                  sub="Daily mean · prospective"
+                  color={mcBenchmark.anti_mean_pct >= 0 ? C_GAIN : C_LOSS}
+                  formula="same trades, flipped YES↔NO direction"
+                />
+                <MetricTile
+                  label="Pro-Trump Percentile"
+                  value={`${mcBenchmark.pct_rank.toFixed(1)}th`}
+                  sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
+                  color={mcBenchmark.pct_rank <= 5 ? C_LOSS : "#111827"}
+                  formula="% of neutral sims with lower mean return"
+                />
+                <MetricTile
+                  label="Anti-Trump Percentile"
+                  value={mcBenchmark.anti_pct_rank != null ? `${mcBenchmark.anti_pct_rank.toFixed(1)}th` : "—"}
+                  sub={`of ${mcBenchmark.n_sims.toLocaleString()} neutral sims`}
+                  color={mcBenchmark.anti_pct_rank >= 95 ? C_GAIN : "#111827"}
+                  formula="% of neutral sims with lower mean return"
+                />
+              </div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide pt-1">Neutral Benchmark Average (across {mcBenchmark.n_sims.toLocaleString()} simulations)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <MetricTile
+                  label="Neutral Mean Daily Return"
+                  value={fmtPct(mcBenchmark.mc_mean * 100, 4)}
+                  sub="Avg across all neutral sims"
+                  color="#111827"
+                  formula="mean of mean_return_sim across 10,000 simulations"
+                />
+                <MetricTile
+                  label="Neutral Avg Final P&L"
+                  value={mcBenchmark.mc_avg_final_pnl != null ? `$${mcBenchmark.mc_avg_final_pnl.toFixed(2)}` : "—"}
+                  sub="Avg cumulative P&L at end"
+                  color={mcBenchmark.mc_avg_final_pnl >= 0 ? C_GAIN : C_LOSS}
+                  formula="mean of final P&L across 10,000 simulations"
+                />
+                <MetricTile
+                  label="Neutral P5 Final P&L"
+                  value={mcBenchmark.mc_p5_final_pnl != null ? `$${mcBenchmark.mc_p5_final_pnl.toFixed(2)}` : "—"}
+                  sub="5th percentile outcome"
+                  color={C_LOSS}
+                  formula="5th percentile of final P&L across 10,000 simulations"
+                />
+                <MetricTile
+                  label="Neutral P95 Final P&L"
+                  value={mcBenchmark.mc_p95_final_pnl != null ? `$${mcBenchmark.mc_p95_final_pnl.toFixed(2)}` : "—"}
+                  sub="95th percentile outcome"
+                  color={C_GAIN}
+                  formula="95th percentile of final P&L across 10,000 simulations"
+                />
+              </div>
             </div>
           )}
 
@@ -1206,7 +1240,24 @@ export default function Analysis() {
             </Card>
           )}
 
-          {/* Precomputed figures — Pro-Trump and Anti-Trump side by side */}
+          {/* Combined full-series chart — both strategies vs MC fan */}
+          {figures.find((f) => f.filename === "fig12_strategy_comparison.png")?.exists && (
+            <Card className="overflow-hidden">
+              <div className="p-4 border-b border-slate-100">
+                <p className="text-sm font-semibold text-slate-700">Full Series — Pro-Trump &amp; Anti-Trump vs Neutral Benchmark</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Both strategies plotted against the 10,000-simulation neutral fan (5–95th and 25–75th percentile bands) across the full 287-day observation window.
+                </p>
+              </div>
+              <img
+                src={getAnalysisFigureUrl("fig12_strategy_comparison.png")}
+                alt="Full series both strategies vs neutral benchmark"
+                className="w-full object-contain"
+              />
+            </Card>
+          )}
+
+          {/* Per-strategy MC benchmark figures */}
           {figures.some((f) => (f.filename === "fig11_mc_benchmark.png" || f.filename === "fig11_mc_benchmark_anti.png") && f.exists) && (
             <div className="space-y-4">
               {figures.find((f) => f.filename === "fig11_mc_benchmark.png")?.exists && (

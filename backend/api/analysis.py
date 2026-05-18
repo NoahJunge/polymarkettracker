@@ -184,7 +184,7 @@ async def get_metrics():
             {"x": round(float((lo + hi) / 2), 5), "count": int(cnt)}
             for cnt, lo, hi in zip(counts, edges[:-1], edges[1:])
         ]
-        result["mc_benchmark"] = {
+        mc_benchmark = {
             "n_sims":        int(len(sims)),
             "mc_mean":       round(float(sims.mean()), 8),
             "mc_std":        round(float(sims.std()),  8),
@@ -192,11 +192,19 @@ async def get_metrics():
             "mc_p95":        round(float(np.percentile(sims, 95)), 8),
             "pct_rank":      round(float(metrics.get("mc_pct_rank", 0)), 2),
             "histogram":     mc_histogram,
-            # Mean returns in % for reference lines on histogram
             "pro_mean_pct":  round(float(metrics.get("mean_daily_return", 0)) * 100, 6),
             "anti_mean_pct": round(float(anti_m.get("mean_daily_return", 0)) * 100, 6),
             "anti_pct_rank": round(float(anti_m.get("mc_pct_rank", 100)), 2),
         }
+        # Augment with neutral summary stats if available
+        mc_summary_path = OUTPUT_DIR / "mc_neutral_summary.csv"
+        if mc_summary_path.exists():
+            s = pd.read_csv(mc_summary_path).iloc[0]
+            mc_benchmark["mc_avg_final_pnl"]    = round(float(s["mc_avg_final_pnl"]),    4)
+            mc_benchmark["mc_median_final_pnl"] = round(float(s["mc_median_final_pnl"]), 4)
+            mc_benchmark["mc_p5_final_pnl"]     = round(float(s["mc_p5_final_pnl"]),     4)
+            mc_benchmark["mc_p95_final_pnl"]    = round(float(s["mc_p95_final_pnl"]),    4)
+        result["mc_benchmark"] = mc_benchmark
     if ar_path.exists():
         ar_df = pd.read_csv(ar_path)
         result["abnormal_returns_series"] = ar_df[["ar", "r_protrump", "r_neutral_mean"]].to_dict("records")

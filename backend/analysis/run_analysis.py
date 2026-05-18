@@ -1349,30 +1349,40 @@ def fig11_mc_benchmark(mean_return_sims, dr_sims, r_strategy, date_range_mc, pct
     save_fig(fig, filename)
 
 
-def fig12_strategy_comparison(curve_pro, curve_anti, pnl_sims_mc, date_range):
-    fig, ax = plt.subplots(figsize=(12, 5))
+def fig12_strategy_comparison(curve_pro, curve_anti, pnl_sims_mc, date_range, prosp_start=None):
+    fig, ax = plt.subplots(figsize=(13, 5))
 
     dr = pd.to_datetime(date_range)
     p5  = np.percentile(pnl_sims_mc, 5,  axis=0)
+    p25 = np.percentile(pnl_sims_mc, 25, axis=0)
+    p75 = np.percentile(pnl_sims_mc, 75, axis=0)
     p95 = np.percentile(pnl_sims_mc, 95, axis=0)
     p50 = np.percentile(pnl_sims_mc, 50, axis=0)
 
-    ax.fill_between(dr, p5, p95, alpha=0.10, color="gray", label="Neutral MC 5–95%")
-    ax.plot(dr, p50, color="gray", lw=1, linestyle="--", alpha=0.6, label="Neutral median")
+    ax.fill_between(dr, p5,  p95, alpha=0.10, color="#94a3b8", label="Neutral 5–95th pct")
+    ax.fill_between(dr, p25, p75, alpha=0.22, color="#94a3b8", label="Neutral 25–75th pct")
+    ax.plot(dr, p50, color="#94a3b8", lw=1.2, linestyle="--", alpha=0.7, label="Neutral median")
 
-    ax.plot(pd.to_datetime(curve_pro["date"]),  curve_pro["total_pnl"],  color=C_PRO,  lw=2.0, label="Pro-Trump")
-    ax.plot(pd.to_datetime(curve_anti["date"]), curve_anti["total_pnl"], color=C_ANTI, lw=2.0, label="Anti-Trump")
-    ax.axhline(0, color=C_TEXT, lw=0.7, linestyle=":")
+    ax.plot(pd.to_datetime(curve_pro["date"]),  curve_pro["total_pnl"],  color=C_PRO,  lw=2.2, label="Pro-Trump")
+    ax.plot(pd.to_datetime(curve_anti["date"]), curve_anti["total_pnl"], color=C_ANTI, lw=2.2, label="Anti-Trump")
+    ax.axhline(0, color=C_TEXT, lw=0.8, linestyle=":")
 
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
+    if prosp_start:
+        ax.axvline(pd.to_datetime(prosp_start), color="#64748b", linewidth=1.0, linestyle="--", alpha=0.7)
+        ylim = ax.get_ylim()
+        ax.text(pd.to_datetime(prosp_start), ylim[1] * 0.92,
+                " Live →", fontsize=8, color="#64748b", va="top")
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
     ax.xaxis.set_major_locator(mdates.MonthLocator())
     plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=8)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:+.0f}"))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:+,.0f}"))
 
     style_ax(ax,
-        title="Figure 12 — Pro-Trump vs Anti-Trump — Cumulative P&L vs Neutral Benchmark",
+        title="Figure 12 — Pro-Trump vs Anti-Trump — Full Series vs Neutral Benchmark\n"
+              "10,000 random-direction simulations  ·  Shaded = 5–95th and 25–75th percentile bands",
         xlabel="Date", ylabel="Cumulative P&L (USD)")
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=9, loc="upper left")
 
     fig.tight_layout()
     save_fig(fig, "fig12_strategy_comparison.png")
@@ -1385,7 +1395,8 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
                    r_protrump=None, r_neutral_mean=None,
                    pct_rank_mc=None,
                    curve_clean_anti=None, curve_full_anti=None,
-                   metrics_anti=None, pct_rank_mc_anti=None):
+                   metrics_anti=None, pct_rank_mc_anti=None,
+                   pnl_sims_mc=None):
     # Equity curves
     curve_clean.to_csv(output_dir / "equity_curve_clean.csv", index=False)
     curve_full.to_csv( output_dir / "equity_curve_full.csv",  index=False)
@@ -1420,6 +1431,17 @@ def export_results(curve_clean, curve_full, mkt_pnl, metrics, output_dir,
     if mean_return_sims is not None:
         pd.DataFrame({"mean_return_sim": mean_return_sims}).to_csv(
             output_dir / "mc_neutral_means.csv", index=False)
+
+    # MC neutral summary stats
+    if pnl_sims_mc is not None and mean_return_sims is not None:
+        final_pnls = pnl_sims_mc[:, -1]
+        pd.DataFrame([{
+            "mc_mean_daily_return": float(mean_return_sims.mean()),
+            "mc_avg_final_pnl":     float(final_pnls.mean()),
+            "mc_p5_final_pnl":      float(np.percentile(final_pnls, 5)),
+            "mc_p95_final_pnl":     float(np.percentile(final_pnls, 95)),
+            "mc_median_final_pnl":  float(np.median(final_pnls)),
+        }]).to_csv(output_dir / "mc_neutral_summary.csv", index=False)
 
     # Abnormal returns series
     if ar_series is not None and r_protrump is not None and r_neutral_mean is not None:
@@ -1520,7 +1542,7 @@ def main():
     if len(curve_retro) > 5:
         fig10_retro_vs_prosp(curve_retro, curve_prosp)
     fig11_mc_benchmark(mean_sims, dr_sims, r_protrump, mc_date_range, pct_rank_mc)
-    fig12_strategy_comparison(curve_full, curve_full_anti, pnl_sims_mc, mc_date_range)
+    fig12_strategy_comparison(curve_full, curve_full_anti, pnl_sims_mc, mc_date_range, prosp_start=PROSPECTIVE_START)
 
     # Anti-Trump figures
     fig1_equity_curve(curve_full_anti, prosp_start=PROSPECTIVE_START,
@@ -1550,7 +1572,8 @@ def main():
                    r_protrump=r_protrump, r_neutral_mean=r_neutral_mean,
                    pct_rank_mc=pct_rank_mc,
                    curve_clean_anti=curve_clean_anti, curve_full_anti=curve_full_anti,
-                   metrics_anti=metrics_anti, pct_rank_mc_anti=pct_rank_mc_anti)
+                   metrics_anti=metrics_anti, pct_rank_mc_anti=pct_rank_mc_anti,
+                   pnl_sims_mc=pnl_sims_mc)
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")
