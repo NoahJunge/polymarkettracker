@@ -56,6 +56,21 @@ export default function PaperTrading() {
     load();
   }, []);
 
+  // Derive anti-Trump summary from the last equity curve point
+  const antiSummary = useMemo(() => {
+    const curve = dualCurve?.anti_trump?.curve;
+    if (!curve?.length) return null;
+    const last = curve[curve.length - 1];
+    return {
+      total_equity:        last.portfolio_value,
+      total_cost_basis:    last.cumulative_invested,
+      total_unrealized_pnl: last.unrealized_pnl,
+      total_realized_pnl:  last.realized_pnl,
+      total_trades:        last.total_open_trades,
+      open_position_count: summary?.open_position_count ?? 0,
+    };
+  }, [dualCurve, summary]);
+
   // Filtered and sorted positions
   const filteredPositions = useMemo(() => {
     let list = positions;
@@ -201,8 +216,10 @@ export default function PaperTrading() {
         </div>
       </div>
 
-      {/* Portfolio Summary */}
-      <PortfolioSummary summary={summary} />
+      {/* Portfolio Summary — switches with the active curve mode */}
+      <PortfolioSummary
+        summary={curveMode === "anti" ? antiSummary ?? summary : summary}
+      />
 
       {/* Curve mode toggle */}
       <div className="flex items-center gap-2">

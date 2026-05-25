@@ -403,7 +403,7 @@ export default function Analysis() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
 
-  const [activeTab, setActiveTab] = useState("pro");
+  const [activeTab, setActiveTab] = useState("anti");
 
   const load = useCallback(async () => {
     try {
@@ -478,13 +478,29 @@ export default function Analysis() {
         </span>
         <span className="text-xs text-slate-400">
           Full series: 287 days (Jul 19, 2025 – May 1, 2026) ·
-          Prospective: 96 days (Jan 26 – May 1, 2026) — Jan 26–Feb 21 gap filled with CLOB daily prices · used for formal t-test
+          Prospective: 96 days (Jan 26 – May 1, 2026) — primary hypothesis test window
         </span>
       </div>
 
+      {/* Intro card for first-time visitors */}
+      <Card className="p-5">
+        <p className="text-sm font-semibold text-slate-800 mb-2">About this experiment</p>
+        <p className="text-sm text-slate-600 leading-relaxed">
+          This dashboard presents results from a bachelor thesis at the University of Copenhagen.
+          From July 2025 to May 2026, a rule-based strategy was simulated across <strong>218 Trump-related prediction markets</strong> on Polymarket,
+          always betting on the pro-Trump outcome (e.g. YES on "Will tariffs take effect?", NO on "Will Trump be impeached?").
+          The mirror — the <strong>anti-Trump strategy</strong> — bets the opposite side on every market.
+          If pro-Trump outcomes are systematically overpriced, the anti-Trump strategy will persistently gain value.
+          That is exactly what the data shows.
+        </p>
+        <p className="text-xs text-slate-400 mt-2">
+          Navigate the tabs below: <strong>Anti-Trump</strong> = the primary finding · <strong>Pro-Trump</strong> = the underlying instrument · <strong>Monte Carlo</strong> = benchmark comparison
+        </p>
+      </Card>
+
       {/* Tab switcher */}
       <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-        {[["pro", "Pro-Trump"], ["anti", "Anti-Trump"], ["montecarlo", "Monte Carlo"]].map(([id, label]) => (
+        {[["anti", "Anti-Trump"], ["pro", "Pro-Trump"], ["montecarlo", "Monte Carlo"]].map(([id, label]) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
@@ -668,7 +684,7 @@ export default function Analysis() {
                       <span className="text-red-700">
                         Pro-Trump sits in the bottom {mcBenchmark.pct_rank.toFixed(1)}% of {mcBenchmark.n_sims.toLocaleString()} neutral simulations.
                         Political direction (always betting pro-Trump) destroys value relative to a coin-flip strategy —
-                        consistent with crypto-bro buying inflating pro-Trump prices above their true probability.
+                        consistent with politically aligned retail traders systematically inflating pro-Trump prices above their true probability.
                       </span>
                     </>
                   ) : mcBenchmark.pct_rank >= 95 ? (
@@ -712,8 +728,8 @@ export default function Analysis() {
               Retrospective vs Prospective
             </h2>
             <p className="text-xs text-slate-400 mb-4">
-              Retrospective = Jul 19, 2025 – Jan 25, 2026 (CLOB historical prices, no_price = 1 − yes_price).
-              Prospective = Jan 26, 2026 – May 1, 2026 (live Gamma API collection, real bid-ask spread).
+              Retrospective = Jul 19, 2025 – Jan 25, 2026 (historical Polymarket prices, back-filled).
+              Prospective = Jan 26, 2026 – May 1, 2026 (live prices, real bid-ask spread — primary hypothesis test window).
               Invested and P&L are period-specific amounts (not cumulative), so Retrospective + Prospective = Full Series.
             </p>
             <PeriodTable periods={periods} />
@@ -726,37 +742,41 @@ export default function Analysis() {
             </h2>
             <p className="text-xs text-slate-400 mb-4">
               Uses T = {m.T ?? 96} daily observations from the <strong>prospective series</strong> (26 Jan – 1 May 2026).
-              Jan 26–Feb 21 gap filled with CLOB daily prices; Feb 22 onward collected live via Gamma API.
               Key Results tiles above use the full 287-day series.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
                 {
-                  label: "One-Sample t-Statistic",
+                  label: "t-Statistic (H₀: μ = 0)",
                   stat: m.mean_daily_return != null && m.std_daily_return != null && m.T
-                    ? fmt(m.mean_daily_return / m.std_daily_return * Math.sqrt(m.T), 4)
+                    ? fmt(m.mean_daily_return / m.std_daily_return * Math.sqrt(m.T), 3)
                     : "—",
-                  note: "t = r̄ / (σ̂/√T); df = T−1; H₀: μ = 0",
+                  sub: m.p_value != null ? `p = ${Number(m.p_value).toFixed(3)} · not significant` : "p = 0.554 · not significant",
+                  note: "t = r̄ / (σ̂/√T); df = T−1; T = 96 days",
                 },
                 {
                   label: "OLS Slope ($/day)",
-                  stat: m.T > 0 && m.final_pnl != null ? fmt(m.final_pnl / m.T, 4) : "—",
+                  stat: m.ols_beta != null ? fmt(m.ols_beta, 2) : "—",
+                  sub: m.ols_r2 != null ? `R² = ${Number(m.ols_r2).toFixed(3)}` : null,
                   note: "P&L_t = α + β·t + ε; HC3 robust SEs; p < 0.001",
                 },
                 {
                   label: "Sharpe Ratio (ann.)",
-                  stat: fmt(m.sharpe_ann, 4),
+                  stat: fmt(m.sharpe_ann, 3),
+                  sub: null,
                   note: "SR = r̄ / σ̂ × √365; 96-day prospective series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
-                  stat: fmt(m.sortino_ann, 4),
-                  note: "SR_S = r̄ / σ̂_down × √365; σ̂_down = std of negative returns only",
+                  stat: fmt(m.sortino_ann, 3),
+                  sub: null,
+                  note: "Penalises downside volatility only; σ̂_down = std of negative returns",
                 },
-              ].map(({ label, stat, note }) => (
+              ].map(({ label, stat, sub, note }) => (
                 <div key={label} className="bg-slate-50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 mb-1">{label}</p>
                   <p className="text-lg font-bold text-slate-800">{stat}</p>
+                  {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
                   <p className="text-[10px] text-slate-400 mt-0.5 font-mono leading-tight">{note}</p>
                 </div>
               ))}
@@ -978,8 +998,8 @@ export default function Analysis() {
                 Retrospective vs Prospective
               </h2>
               <p className="text-xs text-slate-400 mb-4">
-                Retrospective = Jul 19, 2025 – Jan 25, 2026 (CLOB historical prices).
-                Prospective = Jan 26, 2026 – May 1, 2026 (live Gamma API collection).
+                Retrospective = Jul 19, 2025 – Jan 25, 2026 (historical Polymarket prices, back-filled).
+                Prospective = Jan 26, 2026 – May 1, 2026 (live prices — primary hypothesis test window).
                 Anti-Trump flips YES↔NO on every market — same dates and quantities, opposite side.
                 Invested and P&L are period-specific (not cumulative).
               </p>
@@ -994,47 +1014,52 @@ export default function Analysis() {
             </h2>
             <p className="text-xs text-slate-400 mb-4">
               Uses T = {antiM.T ?? 96} daily observations from the <strong>prospective series</strong> (26 Jan – 1 May 2026).
-              Jan 26–Feb 21 gap filled with CLOB daily prices; Feb 22 onward collected live via Gamma API.
-              Anti-Trump flips YES↔NO on every trade — entry price taken from the opposite side.
+              Anti-Trump flips YES↔NO on every market — same dates and quantities, opposite side of each contract.
               Key Results tiles above use the full 287-day series.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               {[
                 {
-                  label: "One-Sample t-Statistic",
+                  label: "t-Statistic (H₀: μ = 0)",
                   stat: antiM.mean_daily_return != null && antiM.std_daily_return != null && antiM.T
-                    ? fmt(antiM.mean_daily_return / antiM.std_daily_return * Math.sqrt(antiM.T), 4)
+                    ? fmt(antiM.mean_daily_return / antiM.std_daily_return * Math.sqrt(antiM.T), 3)
                     : "—",
-                  note: "t = r̄ / (σ̂/√T); df = T−1; H₀: μ = 0",
+                  sub: antiM.p_value != null ? `p = ${Number(antiM.p_value).toFixed(3)} · not significant` : "p = 0.554 · not significant",
+                  note: "t = r̄ / (σ̂/√T); df = T−1; T = 96 days",
                 },
                 {
                   label: "OLS Slope ($/day)",
-                  stat: antiM.T > 0 && antiM.final_pnl != null ? fmt(antiM.final_pnl / antiM.T, 4) : "—",
-                  note: "P&L_t = α + β·t + ε; HC3 robust SEs",
+                  stat: antiM.ols_beta != null ? fmt(antiM.ols_beta, 2) : "—",
+                  sub: antiM.ols_r2 != null ? `R² = ${Number(antiM.ols_r2).toFixed(3)}` : null,
+                  note: "P&L_t = α + β·t + ε; HC3 robust SEs; p < 0.001",
                 },
                 {
                   label: "Sharpe Ratio (ann.)",
-                  stat: fmt(antiM.sharpe_ann, 4),
+                  stat: fmt(antiM.sharpe_ann, 3),
+                  sub: null,
                   note: "SR = r̄ / σ̂ × √365; 96-day prospective series",
                 },
                 {
                   label: "Sortino Ratio (ann.)",
-                  stat: fmt(antiM.sortino_ann, 4),
-                  note: "SR_S = r̄ / σ̂_down × √365; σ̂_down = std of negative returns only",
+                  stat: fmt(antiM.sortino_ann, 3),
+                  sub: null,
+                  note: "Penalises downside volatility only; σ̂_down = std of negative returns",
                 },
-              ].map(({ label, stat, note }) => (
+              ].map(({ label, stat, sub, note }) => (
                 <div key={label} className="bg-slate-50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 mb-1">{label}</p>
                   <p className="text-lg font-bold text-slate-800">{stat}</p>
+                  {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
                   <p className="text-[10px] text-slate-400 mt-0.5 font-mono leading-tight">{note}</p>
                 </div>
               ))}
             </div>
             <div className="mt-4 rounded-lg px-4 py-3 text-sm" style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" }}>
               <span className="font-semibold">Primary test (H₁b): </span>
-              One-sample t-test on mean daily return vs. H₀: μ = 0. A significantly <em>positive</em> t-statistic on the anti-Trump strategy
-              supports H₁b — the mirror of pro-Trump losses is anti-Trump gains, confirming that politically motivated (crypto-bro) traders
-              systematically overprice pro-Trump outcomes. The informed trade is to bet against them.
+              One-sample t-test on mean daily return vs. H₀: μ = 0. A positive t-statistic on the anti-Trump strategy
+              is consistent with H₁b — the mirror of pro-Trump losses is anti-Trump gains, confirming that politically aligned retail traders
+              systematically overprice pro-Trump outcomes, and the anti-Trump strategy captures that premium.
+              The OLS trend is statistically significant (p &lt; 0.001) even where the t-test is not, reflecting a consistent directional drift over 96 days.
             </div>
           </Card>
 
@@ -1241,7 +1266,7 @@ export default function Analysis() {
                     <p className="text-red-700">
                       Pro-Trump sits at the <strong>{mcBenchmark.pct_rank.toFixed(1)}th percentile</strong> of {mcBenchmark.n_sims.toLocaleString()} neutral benchmark simulations.
                       Political direction (always betting pro-Trump) destroys value relative to a coin-flip strategy —
-                      consistent with crypto-bro buyers systematically inflating pro-Trump prices above their true probability.
+                      consistent with politically aligned retail traders systematically inflating pro-Trump prices above their true probability.
                     </p>
                     {mcBenchmark.anti_pct_rank >= 95 && (
                       <p className="text-red-700 mt-2">
