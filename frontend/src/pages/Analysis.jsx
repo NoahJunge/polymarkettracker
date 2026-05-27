@@ -605,7 +605,14 @@ export default function Analysis() {
                 </div>
 
                 {/* Secondary metric row */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <MetricTile
+                    label="Return on Invested"
+                    value={periods?.prospective?.return_pct != null ? fmtPct(periods.prospective.return_pct) : "—"}
+                    sub={`Prospective 96d · Full series: ${fmtPct(periods?.full?.return_pct ?? m.return_on_invested)}`}
+                    color={periods?.prospective?.return_pct >= 0 ? C_GAIN : C_LOSS}
+                    formula="Prospective P&L / capital invested during prospective period"
+                  />
                   <MetricTile
                     label="Annualised Return"
                     value={fullAnnReturn != null ? fmtPct(fullAnnReturn * 100) : "—"}
@@ -894,16 +901,23 @@ export default function Analysis() {
                     />
                     <MetricTile
                       label="Win Rate"
-                      value={mktSummary ? `${(100 - mktSummary.win_rate).toFixed(1)}%` : "—"}
+                      value={mktSummary ? `${(mktSummary.negative / mktSummary.total * 100).toFixed(1)}%` : "—"}
                       sub={mktSummary ? `${mktSummary.negative}/${mktSummary.total} markets` : ""}
-                      color={mktSummary ? ((100 - mktSummary.win_rate) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
+                      color={mktSummary ? ((mktSummary.negative / mktSummary.total * 100) >= 50 ? C_GAIN : C_LOSS) : "#111827"}
                       formula="pro-Trump losing market = anti-Trump win · as of 1 May"
                     />
                   </div>
                 </div>
 
                 {/* Secondary metric row */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <MetricTile
+                    label="Return on Invested"
+                    value={antiPeriods?.prospective?.return_pct != null ? fmtPct(antiPeriods.prospective.return_pct) : "—"}
+                    sub={`Prospective 96d · Full series: ${fmtPct(aFull?.return_pct ?? antiM.return_on_invested)}`}
+                    color={antiPeriods?.prospective?.return_pct >= 0 ? C_GAIN : C_LOSS}
+                    formula="Prospective P&L / capital invested during prospective period"
+                  />
                   <MetricTile
                     label="Annualised Return"
                     value={aFullAnnReturn != null ? fmtPct(aFullAnnReturn * 100) : "—"}
