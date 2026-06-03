@@ -530,16 +530,27 @@ def compute_market_size_analysis(mkt_pnl, snaps):
     # Anti-Trump P&L is the negation of pro-Trump P&L
     size_df["anti_pnl"] = -size_df["unrealised_pnl"]
 
+    # Cost basis per market: total_qty * avg_entry
+    size_df["total_cost"] = size_df["total_qty"] * size_df["avg_entry"]
+
     # Summary stats per cohort
     summary = {}
     for cohort in ["Large", "Small"]:
         sub = size_df[size_df["size_cohort"] == cohort]
+        total_cost = float(sub["total_cost"].sum()) if len(sub) > 0 else 0
+        total_pnl_pro = float(sub["unrealised_pnl"].sum())
+        total_pnl_anti = float(sub["anti_pnl"].sum())
+        roi_pro = (total_pnl_pro / total_cost * 100) if total_cost > 0 else 0
+        roi_anti = (total_pnl_anti / total_cost * 100) if total_cost > 0 else 0
         summary[cohort] = {
             "count": int(len(sub)),
-            "total_pnl_pro": round(float(sub["unrealised_pnl"].sum()), 4),
+            "total_pnl_pro": round(total_pnl_pro, 4),
             "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
-            "total_pnl_anti": round(float(sub["anti_pnl"].sum()), 4),
+            "total_pnl_anti": round(total_pnl_anti, 4),
             "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if len(sub) > 0 else 0,
+            "total_invested": round(total_cost, 4),
+            "roi_pro": round(roi_pro, 4),
+            "roi_anti": round(roi_anti, 4),
         }
 
     size_stats = {
@@ -560,8 +571,9 @@ def print_market_size_analysis(size_stats):
     for cohort in ["Large", "Small"]:
         s = size_stats["cohorts"][cohort]
         print(f"  {cohort} markets (n = {s['count']}):")
-        print(f"    Pro-Trump  total P&L : {usd(s['total_pnl_pro'])}   mean = {usd(s['mean_pnl_pro'])}")
-        print(f"    Anti-Trump total P&L : {usd(s['total_pnl_anti'])}   mean = {usd(s['mean_pnl_anti'])}")
+        print(f"    Total invested       : {usd(s['total_invested'])}")
+        print(f"    Pro-Trump  total P&L : {usd(s['total_pnl_pro'])}   mean = {usd(s['mean_pnl_pro'])}   ROI = {s['roi_pro']:.2f}%")
+        print(f"    Anti-Trump total P&L : {usd(s['total_pnl_anti'])}   mean = {usd(s['mean_pnl_anti'])}   ROI = {s['roi_anti']:.2f}%")
         print()
 
 

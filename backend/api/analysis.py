@@ -417,12 +417,18 @@ async def get_metrics():
                 cohorts = {}
                 for cohort in ["Large", "Small"]:
                     sub = ms_df[ms_df["size_cohort"] == cohort]
+                    total_cost = float(sub["total_cost"].sum()) if "total_cost" in sub.columns and len(sub) > 0 else 0
+                    total_pnl_pro = float(sub["unrealised_pnl"].sum()) if len(sub) > 0 else 0
+                    total_pnl_anti = float(sub["anti_pnl"].sum()) if "anti_pnl" in sub.columns and len(sub) > 0 else 0
                     cohorts[cohort] = {
                         "count": int(len(sub)),
-                        "total_pnl_pro": round(float(sub["unrealised_pnl"].sum()), 4),
+                        "total_pnl_pro": round(total_pnl_pro, 4),
                         "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
-                        "total_pnl_anti": round(float(sub["anti_pnl"].sum()), 4) if "anti_pnl" in sub.columns else 0,
+                        "total_pnl_anti": round(total_pnl_anti, 4),
                         "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if "anti_pnl" in sub.columns and len(sub) > 0 else 0,
+                        "total_invested": round(total_cost, 4),
+                        "roi_pro": round(total_pnl_pro / total_cost * 100, 4) if total_cost > 0 else 0,
+                        "roi_anti": round(total_pnl_anti / total_cost * 100, 4) if total_cost > 0 else 0,
                     }
                 median_vol = ms_df.groupby("size_cohort")["mean_volume"].first()
                 # Median threshold is the min of large cohort mean_volume values

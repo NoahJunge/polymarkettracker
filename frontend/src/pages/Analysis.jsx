@@ -1181,6 +1181,38 @@ export default function Analysis() {
                     />
                   </div>
 
+                  {/* ROI row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+                    <MetricTile
+                      label="ROI — Large (Anti)"
+                      value={marketSize.cohorts?.Large?.roi_anti != null ? fmtPct(marketSize.cohorts.Large.roi_anti) : "—"}
+                      sub={`Pro: ${marketSize.cohorts?.Large?.roi_pro != null ? fmtPct(marketSize.cohorts.Large.roi_pro) : "—"}`}
+                      color={marketSize.cohorts?.Large?.roi_anti >= 0 ? C_GAIN : C_LOSS}
+                      formula="Anti-Trump P&L / invested capital × 100"
+                    />
+                    <MetricTile
+                      label="ROI — Small (Anti)"
+                      value={marketSize.cohorts?.Small?.roi_anti != null ? fmtPct(marketSize.cohorts.Small.roi_anti) : "—"}
+                      sub={`Pro: ${marketSize.cohorts?.Small?.roi_pro != null ? fmtPct(marketSize.cohorts.Small.roi_pro) : "—"}`}
+                      color={marketSize.cohorts?.Small?.roi_anti >= 0 ? C_GAIN : C_LOSS}
+                      formula="Anti-Trump P&L / invested capital × 100"
+                    />
+                    <MetricTile
+                      label="Invested (Large)"
+                      value={fmtUsd(marketSize.cohorts?.Large?.total_invested)}
+                      sub={`${marketSize.cohorts?.Large?.count ?? 0} markets`}
+                      color="#64748b"
+                      formula="Sum of cost basis across large markets"
+                    />
+                    <MetricTile
+                      label="Invested (Small)"
+                      value={fmtUsd(marketSize.cohorts?.Small?.total_invested)}
+                      sub={`${marketSize.cohorts?.Small?.count ?? 0} markets`}
+                      color="#64748b"
+                      formula="Sum of cost basis across small markets"
+                    />
+                  </div>
+
                   {(() => {
                     const lg = marketSize.cohorts?.Large;
                     const sm = marketSize.cohorts?.Small;
