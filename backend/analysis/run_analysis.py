@@ -498,6 +498,126 @@ def print_sp500_correlation(corr_stats):
     print(f"  → Market β = {beta:+.4f}: a 1% S&P 500 move predicts a {beta*100:+.4f}% anti-Trump return change")
 
 
+def compute_market_size_analysis(mkt_pnl, snaps):
+    """Split markets into large/small cohorts by median prospective volume, compare P&L."""
+    prosp_start = pd.to_datetime(CLEAN_START).date()
+    exp_end = pd.to_datetime(EXPERIMENT_END).date()
+
+    # Filter snapshots to prospective period with valid volume
+    prosp_snaps = snaps[
+        (snaps["date"] >= prosp_start) & (snaps["date"] <= exp_end)
+    ].copy()
+    if "volumeNum" not in prosp_snaps.columns:
+        return None, None
+    prosp_snaps["volumeNum"] = pd.to_numeric(prosp_snaps["volumeNum"], errors="coerce").fillna(0)
+
+    # Mean volume per market across prospective snapshots
+    vol_per_market = prosp_snaps.groupby("market_id")["volumeNum"].mean().reset_index()
+    vol_per_market.columns = ["market_id", "mean_volume"]
+
+    # Median split threshold
+    median_vol = vol_per_market["mean_volume"].median()
+
+    # Tag each market
+    vol_per_market["size_cohort"] = np.where(
+        vol_per_market["mean_volume"] >= median_vol, "Large", "Small"
+    )
+
+    # Join with mkt_pnl
+    size_df = mkt_pnl.merge(vol_per_market[["market_id", "mean_volume", "size_cohort"]],
+                             on="market_id", how="inner")
+
+    # Anti-Trump P&L is the negation of pro-Trump P&L
+    size_df["anti_pnl"] = -size_df["unrealised_pnl"]
+
+    # Summary stats per cohort
+    summary = {}
+    for cohort in ["Large", "Small"]:
+        sub = size_df[size_df["size_cohort"] == cohort]
+        summary[cohort] = {
+            "count": int(len(sub)),
+            "total_pnl_pro": round(float(sub["unrealised_pnl"].sum()), 4),
+            "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
+            "total_pnl_anti": round(float(sub["anti_pnl"].sum()), 4),
+            "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if len(sub) > 0 else 0,
+        }
+
+    size_stats = {
+        "median_volume": round(float(median_vol), 2),
+        "cohorts": summary,
+    }
+
+    return size_df, size_stats
+
+
+def print_market_size_analysis(size_stats):
+    """Section 11 — Market Size Analysis."""
+    section("SECTION 11 — MARKET SIZE ANALYSIS (LARGE vs SMALL)")
+    print(f"""
+  Markets split by median prospective-period volume.
+  Median volume threshold: ${size_stats['median_volume']:,.2f}
+""")
+    for cohort in ["Large", "Small"]:
+        s = size_stats["cohorts"][cohort]
+        print(f"  {cohort} markets (n = {s['count']}):")
+        print(f"    Pro-Trump  total P&L : {usd(s['total_pnl_pro'])}   mean = {usd(s['mean_pnl_pro'])}")
+        print(f"    Anti-Trump total P&L : {usd(s['total_pnl_anti'])}   mean = {usd(s['mean_pnl_anti'])}")
+        print()
+
+
+def fig15_market_size_comparison(size_df, size_stats, filename="fig15_market_size_comparison.png"):
+    """Fig 15: Grouped bar chart — large vs small market cohorts P&L comparison."""
+    cohorts = size_stats["cohorts"]
+    labels = ["Large", "Small"]
+    x = np.arange(len(labels))
+    width = 0.3
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Panel 1: Total P&L
+    pro_totals = [cohorts[c]["total_pnl_pro"] for c in labels]
+    anti_totals = [cohorts[c]["total_pnl_anti"] for c in labels]
+    ax = axes[0]
+    ax.bar(x - width/2, pro_totals, width, label="Pro-Trump", color=C_PRO, alpha=0.85)
+    ax.bar(x + width/2, anti_totals, width, label="Anti-Trump", color=C_ANTI, alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.axhline(0, color=C_TEXT, lw=0.8, ls=":")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.0f}"))
+    style_ax(ax, "Total P&L by Cohort", "Market Size", "Total P&L (USD)")
+    ax.legend(fontsize=8)
+
+    # Panel 2: Mean P&L per market
+    pro_means = [cohorts[c]["mean_pnl_pro"] for c in labels]
+    anti_means = [cohorts[c]["mean_pnl_anti"] for c in labels]
+    ax = axes[1]
+    ax.bar(x - width/2, pro_means, width, label="Pro-Trump", color=C_PRO, alpha=0.85)
+    ax.bar(x + width/2, anti_means, width, label="Anti-Trump", color=C_ANTI, alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.axhline(0, color=C_TEXT, lw=0.8, ls=":")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.2f}"))
+    style_ax(ax, "Mean P&L per Market", "Market Size", "Mean P&L (USD)")
+    ax.legend(fontsize=8)
+
+    # Panel 3: Market count
+    counts = [cohorts[c]["count"] for c in labels]
+    ax = axes[2]
+    ax.bar(x, counts, width * 2, color=["#64748b", "#94a3b8"], alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    for i, v in enumerate(counts):
+        ax.text(i, v + 0.5, str(v), ha="center", fontsize=9, fontweight="600")
+    style_ax(ax, "Market Count", "Market Size", "Number of Markets")
+
+    fig.suptitle(
+        f"Figure 15 — Market Size Analysis · Median Volume Split (${size_stats['median_volume']:,.0f})",
+        fontsize=12, fontweight="700", y=1.02,
+    )
+    fig.tight_layout()
+    save_fig(fig, filename)
+
+
 def fig13_sp500_scatter(aligned, corr_stats, filename="fig13_sp500_scatter.png"):
     """Scatter plot of anti-Trump vs S&P 500 daily returns with OLS regression line."""
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -1779,6 +1899,11 @@ def main():
     if sp500_corr_stats is not None:
         print_sp500_correlation(sp500_corr_stats)
 
+    # ── Section 11 — Market Size Analysis ─────────────────────────────────────
+    size_df, size_stats = compute_market_size_analysis(mkt_pnl, snaps)
+    if size_stats is not None:
+        print_market_size_analysis(size_stats)
+
     # ── Figures ───────────────────────────────────────────────────────────────
     section("SECTION 7 — GENERATING FIGURES")
     print()
@@ -1822,6 +1947,10 @@ def main():
         fig13_sp500_scatter(sp500_aligned, sp500_corr_stats)
         fig14_sp500_dual_axis(sp500_aligned, sp500_corr_stats, curve_clean_anti=curve_clean_anti)
 
+    # Market size comparison figure
+    if size_df is not None and size_stats is not None:
+        fig15_market_size_comparison(size_df, size_stats)
+
     # ── Export ────────────────────────────────────────────────────────────────
     section("SECTION 8 — EXPORTING DATA")
     print()
@@ -1841,6 +1970,11 @@ def main():
         stats_export = {k: v for k, v in sp500_corr_stats.items() if k != "rolling_corr"}
         pd.DataFrame([stats_export]).to_csv(OUTPUT_DIR / "sp500_correlation_stats.csv", index=False)
         print(f"  S&P 500 correlation CSVs saved to {OUTPUT_DIR}")
+
+    # ── Market size analysis CSV export ────────────────────────────────────────
+    if size_df is not None:
+        size_df.to_csv(OUTPUT_DIR / "market_size_analysis.csv", index=False)
+        print(f"  Market size analysis CSV saved to {OUTPUT_DIR}")
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")

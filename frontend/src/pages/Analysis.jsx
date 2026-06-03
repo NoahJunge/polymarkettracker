@@ -495,6 +495,7 @@ export default function Analysis() {
   const antiEquity  = metrics?.anti_equity_series;
   const strategyPeriodComparison = metrics?.strategy_period_comparison || [];
   const sp500 = metrics?.sp500_correlation;
+  const marketSize = metrics?.market_size;
 
   const lastRun = status?.last_run_utc
     ? new Date(status.last_run_utc).toLocaleString()
@@ -1129,6 +1130,91 @@ export default function Analysis() {
               The OLS trend is statistically significant (p &lt; 0.001) even where the t-test is not, reflecting a consistent directional drift over 96 days.
             </div>
           </Card>
+
+          {/* Market Size Analysis — Large vs Small */}
+          {(marketSize || figures.some((f) => f.filename === "fig15_market_size_comparison.png" && f.exists)) && (
+            <Card className="p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                  Market Size Analysis — Large vs Small
+                </h2>
+                <p className="text-xs text-slate-400 mb-4">
+                  Markets split into "Large" and "Small" cohorts by median prospective-period trading volume.
+                  Compares which cohort drives more profit for both pro-Trump and anti-Trump strategies.
+                </p>
+              </div>
+
+              {marketSize && (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <MetricTile
+                      label="Median Volume"
+                      value={fmtUsd(marketSize.median_volume, 0)}
+                      sub="Split threshold (prospective period)"
+                      color="#64748b"
+                    />
+                    <MetricTile
+                      label="Large Markets"
+                      value={marketSize.cohorts?.Large?.count ?? "—"}
+                      sub={`Anti P&L: ${fmtUsd(marketSize.cohorts?.Large?.total_pnl_anti)}`}
+                      color={marketSize.cohorts?.Large?.total_pnl_anti >= 0 ? C_GAIN : C_LOSS}
+                    />
+                    <MetricTile
+                      label="Small Markets"
+                      value={marketSize.cohorts?.Small?.count ?? "—"}
+                      sub={`Anti P&L: ${fmtUsd(marketSize.cohorts?.Small?.total_pnl_anti)}`}
+                      color={marketSize.cohorts?.Small?.total_pnl_anti >= 0 ? C_GAIN : C_LOSS}
+                    />
+                    <MetricTile
+                      label="Mean P&L (Large)"
+                      value={fmtUsd(marketSize.cohorts?.Large?.mean_pnl_anti)}
+                      sub={`Pro: ${fmtUsd(marketSize.cohorts?.Large?.mean_pnl_pro)}`}
+                      color={marketSize.cohorts?.Large?.mean_pnl_anti >= 0 ? C_GAIN : C_LOSS}
+                      formula="Anti-Trump mean P&L per large market"
+                    />
+                    <MetricTile
+                      label="Mean P&L (Small)"
+                      value={fmtUsd(marketSize.cohorts?.Small?.mean_pnl_anti)}
+                      sub={`Pro: ${fmtUsd(marketSize.cohorts?.Small?.mean_pnl_pro)}`}
+                      color={marketSize.cohorts?.Small?.mean_pnl_anti >= 0 ? C_GAIN : C_LOSS}
+                      formula="Anti-Trump mean P&L per small market"
+                    />
+                  </div>
+
+                  {(() => {
+                    const lg = marketSize.cohorts?.Large;
+                    const sm = marketSize.cohorts?.Small;
+                    if (!lg || !sm) return null;
+                    const largeWins = lg.total_pnl_anti > sm.total_pnl_anti;
+                    const winner = largeWins ? "Large" : "Small";
+                    const diff = Math.abs(lg.total_pnl_anti - sm.total_pnl_anti);
+                    return (
+                      <div className="rounded-lg px-4 py-3 text-sm flex items-start gap-2 bg-amber-50 border border-amber-200">
+                        <div>
+                          <span className="font-semibold text-amber-800">{winner}-volume markets drive more anti-Trump profit. </span>
+                          <span className="text-amber-700">
+                            {winner} markets generate {fmtUsd(diff)} more total anti-Trump P&L than {largeWins ? "Small" : "Large"} markets
+                            ({fmtUsd(lg.total_pnl_anti)} vs {fmtUsd(sm.total_pnl_anti)}).
+                            {largeWins
+                              ? " Higher-volume markets — where more traders participate — show greater overpricing of pro-Trump outcomes."
+                              : " Lower-volume markets — with thinner liquidity — show greater overpricing of pro-Trump outcomes."}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
+              {figures.some((f) => f.filename === "fig15_market_size_comparison.png" && f.exists) && (
+                <div className="grid grid-cols-1 gap-4">
+                  {figures.filter((f) => f.filename === "fig15_market_size_comparison.png").map((fig) => (
+                    <FigureCard key={fig.filename} fig={fig} figureVersion={figureVersion} />
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* S&P 500 Correlation & Diversification Analysis */}
           {(sp500 || figures.some((f) => f.filename.startsWith("fig13_") && f.exists)) && (

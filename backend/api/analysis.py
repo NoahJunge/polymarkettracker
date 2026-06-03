@@ -55,6 +55,8 @@ FIGURE_META = [
     # S&P 500 correlation figures
     ("fig13_sp500_scatter.png",             "Anti-Trump vs S&P 500 — Scatter",                "Daily return scatter with OLS regression line"),
     ("fig14_sp500_dual_axis.png",           "Anti-Trump vs S&P 500 — Returns & Correlation",  "Overlaid return series with rolling 20-day correlation"),
+    # Market size analysis
+    ("fig15_market_size_comparison.png",    "Market Size Analysis — Large vs Small",           "P&L comparison by volume-based cohort (median split)"),
 ]
 
 SEED_PATH = Path(__file__).parent.parent / "seed_data" / "seed.xlsx"
@@ -402,6 +404,32 @@ async def get_metrics():
                     "ols_alpha_p": round(float(s["ols_alpha_p"]), 4),
                     "ols_beta_p": round(float(s["ols_beta_p"]), 4),
                     "ols_r_squared": round(float(s["ols_r_squared"]), 4),
+                }
+        except Exception:
+            pass
+
+    # ── Market size analysis stats ─────────────────────────────────────────────
+    market_size_path = OUTPUT_DIR / "market_size_analysis.csv"
+    if market_size_path.exists():
+        try:
+            ms_df = pd.read_csv(market_size_path)
+            if not ms_df.empty and "size_cohort" in ms_df.columns:
+                cohorts = {}
+                for cohort in ["Large", "Small"]:
+                    sub = ms_df[ms_df["size_cohort"] == cohort]
+                    cohorts[cohort] = {
+                        "count": int(len(sub)),
+                        "total_pnl_pro": round(float(sub["unrealised_pnl"].sum()), 4),
+                        "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
+                        "total_pnl_anti": round(float(sub["anti_pnl"].sum()), 4) if "anti_pnl" in sub.columns else 0,
+                        "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if "anti_pnl" in sub.columns and len(sub) > 0 else 0,
+                    }
+                median_vol = ms_df.groupby("size_cohort")["mean_volume"].first()
+                # Median threshold is the min of large cohort mean_volume values
+                large_min = ms_df[ms_df["size_cohort"] == "Large"]["mean_volume"].min() if "Large" in ms_df["size_cohort"].values else 0
+                result["market_size"] = {
+                    "median_volume": round(float(large_min), 2),
+                    "cohorts": cohorts,
                 }
         except Exception:
             pass
