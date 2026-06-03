@@ -212,6 +212,53 @@ function PeriodTable({ periods }) {
   );
 }
 
+function StrategyPeriodComparisonTable({ rows }) {
+  if (!rows?.length) return null;
+
+  return (
+    <Card className="p-5">
+      <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+        Strategy Comparison by Period
+      </h2>
+      <p className="text-xs text-slate-400 mb-4">
+        Comparable view across both strategies for each observation period: days, distinct events, total bets, and return coefficients.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="text-left py-2 pr-4 text-xs font-semibold text-slate-500 uppercase tracking-wide">Period</th>
+              <th className="text-left py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Strategy</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Days</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Events</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Bets</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">r̄ (%)</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">σ (%)</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">t-stat</th>
+              <th className="text-right py-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">β ($/day)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.period_key}-${row.strategy}`} className="border-b border-slate-100 last:border-0">
+                <td className="py-2.5 pr-4 font-medium text-slate-700">{row.period_label}</td>
+                <td className="py-2.5 px-3 text-slate-700">{row.strategy}</td>
+                <td className="py-2.5 px-3 text-right text-slate-600 font-mono text-xs">{row.days}</td>
+                <td className="py-2.5 px-3 text-right text-slate-600 font-mono text-xs">{row.events}</td>
+                <td className="py-2.5 px-3 text-right text-slate-600 font-mono text-xs">{row.bets?.toLocaleString?.() ?? row.bets}</td>
+                <td className="py-2.5 px-3 text-right font-mono text-xs">{row.mean_return_pct != null ? fmt(row.mean_return_pct, 4) : "—"}</td>
+                <td className="py-2.5 px-3 text-right font-mono text-xs">{row.std_return_pct != null ? fmt(row.std_return_pct, 4) : "—"}</td>
+                <td className="py-2.5 px-3 text-right font-mono text-xs">{row.t_stat != null ? fmt(row.t_stat, 4) : "—"}</td>
+                <td className="py-2.5 px-3 text-right font-mono text-xs">{row.beta_usd_per_day != null ? fmtUsd(row.beta_usd_per_day, 2) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 // ── equity sparkline ──────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -446,6 +493,8 @@ export default function Analysis() {
   const antiM       = metrics?.anti_metrics || {};
   const antiPeriods = metrics?.anti_periods;
   const antiEquity  = metrics?.anti_equity_series;
+  const strategyPeriodComparison = metrics?.strategy_period_comparison || [];
+  const sp500 = metrics?.sp500_correlation;
 
   const lastRun = status?.last_run_utc
     ? new Date(status.last_run_utc).toLocaleString()
@@ -514,6 +563,10 @@ export default function Analysis() {
           </button>
         ))}
       </div>
+
+      {!loading && metrics && (
+        <StrategyPeriodComparisonTable rows={strategyPeriodComparison} />
+      )}
 
       {/* Run log (Results tab only) */}
       {activeTab === "pro" && runLog && (
@@ -804,7 +857,7 @@ export default function Analysis() {
       {activeTab === "pro" && figures.some((f) => f.exists && !f.filename.includes("_anti")) && (
         <div>
           {(() => {
-            const proFigs = figures.filter((f) => !f.filename.includes("_anti"));
+            const proFigs = figures.filter((f) => !f.filename.includes("_anti") && !f.filename.startsWith("fig13_") && !f.filename.startsWith("fig14_"));
             return (
               <>
                 <h2 className="text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">
@@ -1076,6 +1129,122 @@ export default function Analysis() {
               The OLS trend is statistically significant (p &lt; 0.001) even where the t-test is not, reflecting a consistent directional drift over 96 days.
             </div>
           </Card>
+
+          {/* S&P 500 Correlation & Diversification Analysis */}
+          {(sp500 || figures.some((f) => f.filename.startsWith("fig13_") && f.exists)) && (
+            <Card className="p-5 space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-700 mb-1 uppercase tracking-wide">
+                  S&P 500 Correlation & Diversification
+                </h2>
+                <p className="text-xs text-slate-400 mb-4">
+                  Does the anti-Trump strategy behave independently of the stock market?
+                  Low correlation with the S&P 500 implies that the strategy's returns arise from political mispricing — not broad equity exposure —
+                  and could provide diversification benefits when combined with a traditional stock portfolio.
+                </p>
+              </div>
+
+              {sp500 && (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <MetricTile
+                      label="Pearson r"
+                      value={sp500.pearson_r >= 0 ? `+${sp500.pearson_r.toFixed(3)}` : sp500.pearson_r.toFixed(3)}
+                      sub={fmtPVal(sp500.pearson_p)}
+                      color={Math.abs(sp500.pearson_r) < 0.2 ? C_GAIN : Math.abs(sp500.pearson_r) < 0.4 ? C_ANTI : C_LOSS}
+                      formula="Linear correlation between daily returns"
+                    />
+                    <MetricTile
+                      label="Spearman rho"
+                      value={sp500.spearman_rho >= 0 ? `+${sp500.spearman_rho.toFixed(3)}` : sp500.spearman_rho.toFixed(3)}
+                      sub={fmtPVal(sp500.spearman_p)}
+                      color={Math.abs(sp500.spearman_rho) < 0.2 ? C_GAIN : Math.abs(sp500.spearman_rho) < 0.4 ? C_ANTI : C_LOSS}
+                      formula="Rank-order correlation (robust to outliers)"
+                    />
+                    <MetricTile
+                      label="Market Beta"
+                      value={sp500.ols_beta >= 0 ? `+${sp500.ols_beta.toFixed(4)}` : sp500.ols_beta.toFixed(4)}
+                      sub={fmtPVal(sp500.ols_beta_p)}
+                      color={Math.abs(sp500.ols_beta) < 0.1 ? C_GAIN : C_ANTI}
+                      formula="OLS: anti_return = alpha + beta * sp500_return"
+                    />
+                    <MetricTile
+                      label="R-squared"
+                      value={sp500.ols_r_squared.toFixed(4)}
+                      sub={`${(sp500.ols_r_squared * 100).toFixed(2)}% of variance explained`}
+                      color={sp500.ols_r_squared < 0.05 ? C_GAIN : C_ANTI}
+                      formula="Fraction of anti-Trump variance explained by S&P 500"
+                    />
+                    <MetricTile
+                      label="OLS Alpha"
+                      value={sp500.ols_alpha >= 0 ? `+${(sp500.ols_alpha * 100).toFixed(4)}%` : `${(sp500.ols_alpha * 100).toFixed(4)}%`}
+                      sub={fmtPVal(sp500.ols_alpha_p)}
+                      color="#111827"
+                      formula="Daily excess return unexplained by market exposure"
+                    />
+                    <MetricTile
+                      label="Aligned Days"
+                      value={sp500.n}
+                      sub="S&P 500 trading days in prospective period"
+                      color="#111827"
+                      formula="Inner join: anti-Trump dates intersect S&P 500 trading days"
+                    />
+                  </div>
+
+                  {/* Interpretation */}
+                  {(() => {
+                    const r = Math.abs(sp500.pearson_r);
+                    const pSig = sp500.pearson_p < 0.05;
+                    const lowCorr = r < 0.2 && !pSig;
+                    return (
+                      <div className={`rounded-lg px-4 py-3 text-sm flex items-start gap-2 ${
+                        lowCorr ? "bg-green-50 border border-green-200" : r < 0.4 ? "bg-amber-50 border border-amber-200" : "bg-red-50 border border-red-200"
+                      }`}>
+                        <div>
+                          {lowCorr ? (
+                            <>
+                              <span className="font-semibold text-green-800">Near-zero correlation — strong diversification potential. </span>
+                              <span className="text-green-700">
+                                Anti-Trump daily returns show no statistically significant relationship with the S&P 500
+                                (r = {sp500.pearson_r >= 0 ? "+" : ""}{sp500.pearson_r.toFixed(3)}, {fmtPVal(sp500.pearson_p)}).
+                                Only {(sp500.ols_r_squared * 100).toFixed(1)}% of return variance is explained by equity market movements (R² = {sp500.ols_r_squared.toFixed(4)}).
+                                This confirms that the strategy's returns arise from <strong>political mispricing within prediction markets</strong>, not from exposure to broad stock market risk.
+                                As an uncorrelated return stream, it could provide meaningful diversification benefits to a traditional equity portfolio.
+                              </span>
+                            </>
+                          ) : r < 0.4 ? (
+                            <>
+                              <span className="font-semibold text-amber-800">Weak correlation — limited equity market overlap. </span>
+                              <span className="text-amber-700">
+                                A small but {pSig ? "statistically significant" : "not statistically significant"} relationship exists (r = {sp500.pearson_r.toFixed(3)}).
+                                The strategy retains diversification value but some equity co-movement is present.
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-semibold text-red-800">Moderate/strong correlation — equity exposure detected. </span>
+                              <span className="text-red-700">
+                                Anti-Trump returns co-move with the S&P 500 (r = {sp500.pearson_r.toFixed(3)}), suggesting partial equity market beta.
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+
+              {/* Figures */}
+              {figures.some((f) => (f.filename.startsWith("fig13_") || f.filename.startsWith("fig14_")) && f.exists) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {figures.filter((f) => f.filename.startsWith("fig13_") || f.filename.startsWith("fig14_")).map((fig) => (
+                    <FigureCard key={fig.filename} fig={fig} figureVersion={figureVersion} />
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Anti-Trump figures gallery */}
           {(() => {
