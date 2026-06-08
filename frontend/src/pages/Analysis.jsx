@@ -565,7 +565,7 @@ export default function Analysis() {
         ))}
       </div>
 
-      {!loading && metrics && (
+      {!loading && metrics && activeTab !== "montecarlo" && (
         <StrategyPeriodComparisonTable rows={strategyPeriodComparison} />
       )}
 
@@ -812,7 +812,9 @@ export default function Analysis() {
                   stat: m.mean_daily_return != null && m.std_daily_return != null && m.T
                     ? fmt(m.mean_daily_return / m.std_daily_return * Math.sqrt(m.T), 3)
                     : "—",
-                  sub: m.p_value != null ? `p = ${Number(m.p_value).toFixed(3)} · not significant` : "p = 0.554 · not significant",
+                  sub: m.p_value != null
+                    ? `p = ${Number(m.p_value).toFixed(3)} · ${Number(m.p_value) < 0.05 ? "significant" : "not significant"}`
+                    : "p = 0.553 · not significant",
                   note: "t = r̄ / (σ̂/√T); df = T−1; T = 96 days",
                 },
                 {
@@ -1092,7 +1094,9 @@ export default function Analysis() {
                   stat: antiM.mean_daily_return != null && antiM.std_daily_return != null && antiM.T
                     ? fmt(antiM.mean_daily_return / antiM.std_daily_return * Math.sqrt(antiM.T), 3)
                     : "—",
-                  sub: antiM.p_value != null ? `p = ${Number(antiM.p_value).toFixed(3)} · not significant` : "p = 0.554 · not significant",
+                  sub: antiM.p_value != null
+                    ? `p = ${Number(antiM.p_value).toFixed(3)} · ${Number(antiM.p_value) < 0.05 ? "significant" : "not significant"}`
+                    : "p = 0.554 · not significant",
                   note: "t = r̄ / (σ̂/√T); df = T−1; T = 96 days",
                 },
                 {

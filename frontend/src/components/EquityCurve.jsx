@@ -114,7 +114,7 @@ export default function EquityCurve({ curve, stats, antiCurve, antiStats, mode =
             type="monotone"
             dataKey="pnl"
             name="pnl"
-            stroke={mode === "dual" ? "#16a34a" : "#16a34a"}
+            stroke={mode === "dual" ? "#7c3aed" : "#16a34a"}
             dot={false}
             strokeWidth={2}
           />

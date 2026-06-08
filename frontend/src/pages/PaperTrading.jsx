@@ -342,7 +342,7 @@ export default function PaperTrading() {
                     </td>
                     <td className="py-2 pr-4 text-xs text-slate-600 whitespace-nowrap">
                       {p.last_trade_date
-                        ? `${parseInt(p.last_trade_date.slice(8))}/${parseInt(p.last_trade_date.slice(5, 7))}`
+                        ? new Date(p.last_trade_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
                         : "—"}
                     </td>
                     <td className="py-2 pr-4">

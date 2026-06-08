@@ -797,6 +797,17 @@ def compute_risk_metrics(curve, label=""):
     var_95  = -np.percentile(r, 5)
     cvar_95 = -r[r < -var_95].mean() if len(r[r < -var_95]) > 0 else var_95
 
+    # t-test p-value (H₀: μ = 0)
+    _, p_value = stats.ttest_1samp(r, popmean=0)
+
+    # OLS trend on total P&L (HC3 robust SEs)
+    t_idx = np.arange(len(curve), dtype=float)
+    y_ols = curve["total_pnl"].values
+    X_ols = sm.add_constant(t_idx)
+    ols_model = sm.OLS(y_ols, X_ols).fit(cov_type="HC3")
+    ols_beta = float(ols_model.params[1])
+    ols_r2   = float(ols_model.rsquared)
+
     return {
         "label":       label,
         "T":           T,
@@ -813,6 +824,9 @@ def compute_risk_metrics(curve, label=""):
         "final_pnl":         pnl[-1],
         "total_invested":    inv[-1],
         "return_on_invested": pnl[-1] / inv[-1] * 100 if inv[-1] > 0 else 0,
+        "p_value":           float(p_value),
+        "ols_beta":          ols_beta,
+        "ols_r2":            ols_r2,
     }
 
 

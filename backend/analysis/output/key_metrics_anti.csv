@@ -15,3 +15,6 @@ final_pnl,1005.662
 total_invested,30020.9185
 return_on_invested,3.349871
 mc_pct_rank,100.0
+p_value,0.553563
+ols_beta,14.072061
+ols_r2,0.661589
