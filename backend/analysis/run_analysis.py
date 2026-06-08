@@ -398,6 +398,312 @@ def build_neutral_mc(yes_pnl, no_pnl, yes_cost, no_cost, n_sims=10_000, seed=42)
     return dr_sims, mean_return_sims, pnl_sims.astype(np.float64)
 
 
+# ── S&P 500 CORRELATION ANALYSIS ─────────────────────────────────────────────
+
+def fetch_sp500_returns(start: str, end: str):
+    """Download ^GSPC daily close via yfinance, compute simple daily returns."""
+    import yfinance as yf
+    ticker = yf.Ticker("^GSPC")
+    hist = ticker.history(start=start, end=end, auto_adjust=True)
+    if hist.empty:
+        raise ValueError("No S&P 500 data returned from yfinance")
+    sp = hist[["Close"]].copy()
+    sp.index = sp.index.tz_localize(None)
+    sp["date"] = sp.index.date
+    sp["sp500_return"] = sp["Close"].pct_change()
+    sp = sp.dropna(subset=["sp500_return"])
+    return sp[["date", "sp500_return", "Close"]].reset_index(drop=True)
+
+
+def align_returns(curve_anti, sp500_df):
+    """Inner join anti-Trump daily returns with S&P 500 on date (trading days only)."""
+    anti = curve_anti[["date", "daily_return"]].dropna().copy()
+    anti["date"] = pd.to_datetime(anti["date"]).dt.date
+    anti = anti.rename(columns={"daily_return": "anti_return"})
+    merged = anti.merge(sp500_df[["date", "sp500_return"]], on="date", how="inner")
+    return merged.sort_values("date").reset_index(drop=True)
+
+
+def compute_sp500_correlation(aligned):
+    """Compute Pearson r, Spearman rho, OLS regression, rolling 20-day correlation."""
+    x = aligned["sp500_return"].values
+    y = aligned["anti_return"].values
+    n = len(aligned)
+
+    # Pearson
+    pearson_r, pearson_p = stats.pearsonr(x, y)
+
+    # Spearman
+    spearman_rho, spearman_p = stats.spearmanr(x, y)
+
+    # OLS: anti_return = alpha + beta * sp500_return
+    X = sm.add_constant(x)
+    ols_model = sm.OLS(y, X).fit(cov_type="HC3")
+    alpha_ols = ols_model.params[0]
+    beta_ols = ols_model.params[1]
+    alpha_p = ols_model.pvalues[0]
+    beta_p = ols_model.pvalues[1]
+    r_squared = ols_model.rsquared
+
+    # Rolling 20-day correlation
+    aligned_copy = aligned.copy()
+    aligned_copy["rolling_corr"] = (
+        aligned_copy["anti_return"]
+        .rolling(20, min_periods=15)
+        .corr(aligned_copy["sp500_return"])
+    )
+
+    return {
+        "n": n,
+        "pearson_r": pearson_r,
+        "pearson_p": pearson_p,
+        "spearman_rho": spearman_rho,
+        "spearman_p": spearman_p,
+        "ols_alpha": alpha_ols,
+        "ols_beta": beta_ols,
+        "ols_alpha_p": alpha_p,
+        "ols_beta_p": beta_p,
+        "ols_r_squared": r_squared,
+        "rolling_corr": aligned_copy[["date", "rolling_corr"]].copy(),
+    }
+
+
+def print_sp500_correlation(corr_stats):
+    """Print Section 10 — S&P 500 Correlation Analysis."""
+    section("SECTION 10 — S&P 500 CORRELATION ANALYSIS")
+    n = corr_stats["n"]
+    print(f"\n  Aligned trading days (anti-Trump ∩ S&P 500): {n}")
+    print()
+
+    subsection("Correlation Coefficients")
+    print(f"    Pearson  r   = {corr_stats['pearson_r']:+.4f}   ({fmt_p(corr_stats['pearson_p'])})")
+    print(f"    Spearman ρ   = {corr_stats['spearman_rho']:+.4f}   ({fmt_p(corr_stats['spearman_p'])})")
+    print()
+
+    subsection("OLS Regression: anti_return = α + β · sp500_return")
+    print(f"    α (intercept) = {corr_stats['ols_alpha']:+.6f}   ({fmt_p(corr_stats['ols_alpha_p'])})")
+    print(f"    β (market)    = {corr_stats['ols_beta']:+.4f}   ({fmt_p(corr_stats['ols_beta_p'])})")
+    print(f"    R²            = {corr_stats['ols_r_squared']:.4f}")
+    print()
+
+    beta = corr_stats["ols_beta"]
+    r = corr_stats["pearson_r"]
+    if abs(r) < 0.2 and corr_stats["pearson_p"] > 0.05:
+        verdict = "No significant linear correlation — anti-Trump returns appear independent of broad equity market"
+    elif abs(r) < 0.4:
+        verdict = "Weak correlation with S&P 500 — limited market exposure"
+    else:
+        verdict = "Moderate/strong correlation with S&P 500 — potential market beta exposure"
+    print(f"  → Interpretation: {verdict}")
+    print(f"  → Market β = {beta:+.4f}: a 1% S&P 500 move predicts a {beta*100:+.4f}% anti-Trump return change")
+
+
+def compute_market_size_analysis(mkt_pnl, snaps):
+    """Split markets into large/small cohorts by median prospective volume, compare P&L."""
+    prosp_start = pd.to_datetime(CLEAN_START).date()
+    exp_end = pd.to_datetime(EXPERIMENT_END).date()
+
+    # Filter snapshots to prospective period with valid volume
+    prosp_snaps = snaps[
+        (snaps["date"] >= prosp_start) & (snaps["date"] <= exp_end)
+    ].copy()
+    if "volumeNum" not in prosp_snaps.columns:
+        return None, None
+    prosp_snaps["volumeNum"] = pd.to_numeric(prosp_snaps["volumeNum"], errors="coerce").fillna(0)
+
+    # Mean volume per market across prospective snapshots
+    vol_per_market = prosp_snaps.groupby("market_id")["volumeNum"].mean().reset_index()
+    vol_per_market.columns = ["market_id", "mean_volume"]
+
+    # Median split threshold
+    median_vol = vol_per_market["mean_volume"].median()
+
+    # Tag each market
+    vol_per_market["size_cohort"] = np.where(
+        vol_per_market["mean_volume"] >= median_vol, "Large", "Small"
+    )
+
+    # Join with mkt_pnl
+    size_df = mkt_pnl.merge(vol_per_market[["market_id", "mean_volume", "size_cohort"]],
+                             on="market_id", how="inner")
+
+    # Anti-Trump P&L is the negation of pro-Trump P&L
+    size_df["anti_pnl"] = -size_df["unrealised_pnl"]
+
+    # Cost basis per market: total_qty * avg_entry
+    size_df["total_cost"] = size_df["total_qty"] * size_df["avg_entry"]
+
+    # Summary stats per cohort
+    summary = {}
+    for cohort in ["Large", "Small"]:
+        sub = size_df[size_df["size_cohort"] == cohort]
+        total_cost = float(sub["total_cost"].sum()) if len(sub) > 0 else 0
+        total_pnl_pro = float(sub["unrealised_pnl"].sum())
+        total_pnl_anti = float(sub["anti_pnl"].sum())
+        roi_pro = (total_pnl_pro / total_cost * 100) if total_cost > 0 else 0
+        roi_anti = (total_pnl_anti / total_cost * 100) if total_cost > 0 else 0
+        summary[cohort] = {
+            "count": int(len(sub)),
+            "total_pnl_pro": round(total_pnl_pro, 4),
+            "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
+            "total_pnl_anti": round(total_pnl_anti, 4),
+            "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if len(sub) > 0 else 0,
+            "total_invested": round(total_cost, 4),
+            "roi_pro": round(roi_pro, 4),
+            "roi_anti": round(roi_anti, 4),
+        }
+
+    size_stats = {
+        "median_volume": round(float(median_vol), 2),
+        "cohorts": summary,
+    }
+
+    return size_df, size_stats
+
+
+def print_market_size_analysis(size_stats):
+    """Section 11 — Market Size Analysis."""
+    section("SECTION 11 — MARKET SIZE ANALYSIS (LARGE vs SMALL)")
+    print(f"""
+  Markets split by median prospective-period volume.
+  Median volume threshold: ${size_stats['median_volume']:,.2f}
+""")
+    for cohort in ["Large", "Small"]:
+        s = size_stats["cohorts"][cohort]
+        print(f"  {cohort} markets (n = {s['count']}):")
+        print(f"    Total invested       : {usd(s['total_invested'])}")
+        print(f"    Pro-Trump  total P&L : {usd(s['total_pnl_pro'])}   mean = {usd(s['mean_pnl_pro'])}   ROI = {s['roi_pro']:.2f}%")
+        print(f"    Anti-Trump total P&L : {usd(s['total_pnl_anti'])}   mean = {usd(s['mean_pnl_anti'])}   ROI = {s['roi_anti']:.2f}%")
+        print()
+
+
+def fig15_market_size_comparison(size_df, size_stats, filename="fig15_market_size_comparison.png"):
+    """Fig 15: Grouped bar chart — large vs small market cohorts P&L comparison."""
+    cohorts = size_stats["cohorts"]
+    labels = ["Large", "Small"]
+    x = np.arange(len(labels))
+    width = 0.3
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Panel 1: Total P&L
+    pro_totals = [cohorts[c]["total_pnl_pro"] for c in labels]
+    anti_totals = [cohorts[c]["total_pnl_anti"] for c in labels]
+    ax = axes[0]
+    ax.bar(x - width/2, pro_totals, width, label="Pro-Trump", color=C_PRO, alpha=0.85)
+    ax.bar(x + width/2, anti_totals, width, label="Anti-Trump", color=C_ANTI, alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.axhline(0, color=C_TEXT, lw=0.8, ls=":")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.0f}"))
+    style_ax(ax, "Total P&L by Cohort", "Market Size", "Total P&L (USD)")
+    ax.legend(fontsize=8)
+
+    # Panel 2: Mean P&L per market
+    pro_means = [cohorts[c]["mean_pnl_pro"] for c in labels]
+    anti_means = [cohorts[c]["mean_pnl_anti"] for c in labels]
+    ax = axes[1]
+    ax.bar(x - width/2, pro_means, width, label="Pro-Trump", color=C_PRO, alpha=0.85)
+    ax.bar(x + width/2, anti_means, width, label="Anti-Trump", color=C_ANTI, alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.axhline(0, color=C_TEXT, lw=0.8, ls=":")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:,.2f}"))
+    style_ax(ax, "Mean P&L per Market", "Market Size", "Mean P&L (USD)")
+    ax.legend(fontsize=8)
+
+    # Panel 3: Market count
+    counts = [cohorts[c]["count"] for c in labels]
+    ax = axes[2]
+    ax.bar(x, counts, width * 2, color=["#64748b", "#94a3b8"], alpha=0.85)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    for i, v in enumerate(counts):
+        ax.text(i, v + 0.5, str(v), ha="center", fontsize=9, fontweight="600")
+    style_ax(ax, "Market Count", "Market Size", "Number of Markets")
+
+    fig.suptitle(
+        f"Figure 15 — Market Size Analysis · Median Volume Split (${size_stats['median_volume']:,.0f})",
+        fontsize=12, fontweight="700", y=1.02,
+    )
+    fig.tight_layout()
+    save_fig(fig, filename)
+
+
+def fig13_sp500_scatter(aligned, corr_stats, filename="fig13_sp500_scatter.png"):
+    """Scatter plot of anti-Trump vs S&P 500 daily returns with OLS regression line."""
+    fig, ax = plt.subplots(figsize=(8, 7))
+
+    x = aligned["sp500_return"].values * 100  # to percent
+    y = aligned["anti_return"].values * 100
+
+    ax.scatter(x, y, s=30, alpha=0.6, color=C_ANTI, edgecolors="white", linewidths=0.4, zorder=3)
+
+    # OLS line
+    x_fit = np.linspace(x.min(), x.max(), 100)
+    y_fit = (corr_stats["ols_alpha"] + corr_stats["ols_beta"] * x_fit / 100) * 100
+    ax.plot(x_fit, y_fit, color=C_PRO, lw=2, linestyle="--", label="OLS fit", zorder=4)
+
+    ax.axhline(0, color=C_TEXT, lw=0.6, linestyle=":", alpha=0.5)
+    ax.axvline(0, color=C_TEXT, lw=0.6, linestyle=":", alpha=0.5)
+
+    # Annotation box
+    textstr = (
+        f"n = {corr_stats['n']}\n"
+        f"Spearman ρ = {corr_stats['spearman_rho']:+.3f}\n"
+        f"β = {corr_stats['ols_beta']:+.4f}  (R² = {corr_stats['ols_r_squared']:.3f})"
+    )
+    props = dict(boxstyle="round,pad=0.5", facecolor="#f8fafc", edgecolor=C_GRID, alpha=0.9)
+    ax.text(0.03, 0.97, textstr, transform=ax.transAxes, fontsize=9,
+            verticalalignment="top", bbox=props)
+
+    style_ax(ax,
+        title="Figure 13 — Anti-Trump Daily Returns vs S&P 500\n"
+              "Scatter with OLS regression line (prospective period)",
+        xlabel="S&P 500 Daily Return (%)",
+        ylabel="Anti-Trump Daily Return (%)")
+    ax.legend(fontsize=9, loc="lower right")
+
+    fig.tight_layout()
+    save_fig(fig, filename)
+
+
+def fig14_sp500_dual_axis(aligned, corr_stats, curve_clean_anti=None, filename="fig14_sp500_dual_axis.png"):
+    """Anti-Trump vs S&P 500 daily returns overlaid (full prospective period)."""
+    fig, ax = plt.subplots(figsize=(13, 5))
+
+    # Full anti-Trump series (every calendar day in prospective period)
+    if curve_clean_anti is not None and not curve_clean_anti.empty:
+        anti_full = curve_clean_anti[["date", "daily_return"]].dropna().copy()
+        anti_full["date"] = pd.to_datetime(anti_full["date"]).dt.date
+        anti_dates = pd.to_datetime(anti_full["date"])
+        anti_r = anti_full["daily_return"].values * 100
+    else:
+        anti_dates = pd.to_datetime(aligned["date"])
+        anti_r = aligned["anti_return"].values * 100
+
+    # S&P 500 only on its trading days (from aligned)
+    sp_dates = pd.to_datetime(aligned["date"])
+    sp_r = aligned["sp500_return"].values * 100
+
+    ax.bar(anti_dates, anti_r, width=0.8, alpha=0.6, color=C_ANTI, label="Anti-Trump (all days)")
+    ax.plot(sp_dates, sp_r, color="#3b82f6", lw=1.2, alpha=0.8, label="S&P 500 (trading days)")
+    ax.axhline(0, color=C_TEXT, lw=0.6, linestyle=":")
+
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right", fontsize=8)
+
+    style_ax(ax,
+        title="Figure 14 — Anti-Trump vs S&P 500 Daily Returns\n"
+              "Full prospective period (26 Jan – 1 May 2026)",
+        xlabel="Date", ylabel="Daily Return (%)")
+    ax.legend(fontsize=9, loc="upper left")
+
+    fig.tight_layout()
+    save_fig(fig, filename)
+
+
 def compute_abnormal_returns(curve, dr_sims):
     """
     AR_t = R_actual_t - mean(R_neutral_t across all simulations).
@@ -1562,6 +1868,22 @@ def main():
     # ── Per-market P&L ────────────────────────────────────────────────────────
     mkt_pnl = compute_per_market_pnl(dca, price_lookup, daily_snaps, end_dt=EXPERIMENT_END, mkts=mkts)
 
+    # ── S&P 500 correlation data ───────────────────────────────────────────
+    sp500_aligned = None
+    sp500_corr_stats = None
+    try:
+        print("\n  Fetching S&P 500 data for correlation analysis …")
+        sp500_df = fetch_sp500_returns(CLEAN_START, EXPERIMENT_END)
+        sp500_aligned = align_returns(curve_clean_anti, sp500_df)
+        if len(sp500_aligned) >= 10:
+            sp500_corr_stats = compute_sp500_correlation(sp500_aligned)
+            print(f"  S&P 500 correlation: {sp500_corr_stats['n']} aligned days, "
+                  f"r = {sp500_corr_stats['pearson_r']:+.3f}")
+        else:
+            print(f"  S&P 500 correlation: only {len(sp500_aligned)} aligned days — skipping (need ≥ 10)")
+    except Exception as e:
+        print(f"  ⚠ S&P 500 data unavailable ({e}) — skipping correlation analysis")
+
     # ── Risk metrics (clean series as primary) ────────────────────────────────
     metrics      = compute_risk_metrics(curve_clean,      label="CLEAN SERIES")
     metrics_anti = compute_risk_metrics(curve_clean_anti, label="CLEAN SERIES (ANTI-TRUMP)")
@@ -1584,6 +1906,15 @@ def main():
 
     # ── Section 9 — Retrospective vs Prospective ─────────────────────────────
     print_retro_prosp_comparison(curve_retro, curve_prosp, curve_clean)
+
+    # ── Section 10 — S&P 500 Correlation ──────────────────────────────────────
+    if sp500_corr_stats is not None:
+        print_sp500_correlation(sp500_corr_stats)
+
+    # ── Section 11 — Market Size Analysis ─────────────────────────────────────
+    size_df, size_stats = compute_market_size_analysis(mkt_pnl, snaps)
+    if size_stats is not None:
+        print_market_size_analysis(size_stats)
 
     # ── Figures ───────────────────────────────────────────────────────────────
     section("SECTION 7 — GENERATING FIGURES")
@@ -1623,6 +1954,15 @@ def main():
                        filename="fig11_mc_benchmark_anti.png",
                        color=C_ANTI, label="Anti-Trump")
 
+    # S&P 500 correlation figures
+    if sp500_aligned is not None and sp500_corr_stats is not None:
+        fig13_sp500_scatter(sp500_aligned, sp500_corr_stats)
+        fig14_sp500_dual_axis(sp500_aligned, sp500_corr_stats, curve_clean_anti=curve_clean_anti)
+
+    # Market size comparison figure
+    if size_df is not None and size_stats is not None:
+        fig15_market_size_comparison(size_df, size_stats)
+
     # ── Export ────────────────────────────────────────────────────────────────
     section("SECTION 8 — EXPORTING DATA")
     print()
@@ -1635,6 +1975,18 @@ def main():
                    pnl_sims_mc=pnl_sims_mc,
                    full_pro_mean=full_pro_mean, full_anti_mean=full_anti_mean,
                    full_pro_pct_rank=full_pro_pct_rank, full_anti_pct_rank=full_anti_pct_rank)
+
+    # ── S&P 500 correlation CSV export ────────────────────────────────────────
+    if sp500_aligned is not None and sp500_corr_stats is not None:
+        sp500_aligned.to_csv(OUTPUT_DIR / "sp500_correlation.csv", index=False)
+        stats_export = {k: v for k, v in sp500_corr_stats.items() if k != "rolling_corr"}
+        pd.DataFrame([stats_export]).to_csv(OUTPUT_DIR / "sp500_correlation_stats.csv", index=False)
+        print(f"  S&P 500 correlation CSVs saved to {OUTPUT_DIR}")
+
+    # ── Market size analysis CSV export ────────────────────────────────────────
+    if size_df is not None:
+        size_df.to_csv(OUTPUT_DIR / "market_size_analysis.csv", index=False)
+        print(f"  Market size analysis CSV saved to {OUTPUT_DIR}")
 
     print("\n" + "═" * 70)
     print("  ANALYSIS COMPLETE")

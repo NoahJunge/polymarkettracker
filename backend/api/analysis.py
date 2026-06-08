@@ -1,6 +1,7 @@
 """Analysis results API — serves pre-computed figures and metrics."""
 
 import datetime
+import json
 import sys
 from pathlib import Path
 
@@ -51,6 +52,11 @@ FIGURE_META = [
     ("fig9_rolling_sharpe_anti.png",       "Anti-Trump — Rolling 20-Day Sharpe Ratio",      "Risk-adjusted performance over time"),
     ("fig10_retro_vs_prosp_anti.png",      "Anti-Trump — Retrospective vs Prospective",     "Period comparison"),
     ("fig11_mc_benchmark_anti.png",        "Anti-Trump — Neutral Benchmark Monte Carlo",    "10,000 random-direction simulations vs anti-Trump"),
+    # S&P 500 correlation figures
+    ("fig13_sp500_scatter.png",             "Anti-Trump vs S&P 500 — Scatter",                "Daily return scatter with OLS regression line"),
+    ("fig14_sp500_dual_axis.png",           "Anti-Trump vs S&P 500 — Returns & Correlation",  "Overlaid return series with rolling 20-day correlation"),
+    # Market size analysis
+    ("fig15_market_size_comparison.png",    "Market Size Analysis — Large vs Small",           "P&L comparison by volume-based cohort (median split)"),
 ]
 
 SEED_PATH = Path(__file__).parent.parent / "seed_data" / "seed.xlsx"
@@ -297,6 +303,142 @@ async def get_metrics():
             "full":          _stats(adf,     "Full Series",
                                     initial_invested=0.0, initial_pnl=0.0),
         }
+
+    # ── Cross-strategy comparable period table ───────────────────────────────
+    # Includes days, distinct events, total bets, and return coefficients.
+    try:
+        if "periods" in result and "anti_periods" in result and SEED_PATH.exists():
+            trades = pd.read_excel(SEED_PATH, sheet_name="paper_trades")
+            if "metadata" in trades.columns:
+                trades["meta"] = trades["metadata"].apply(
+                    lambda x: json.loads(x) if isinstance(x, str) else (x if isinstance(x, dict) else {})
+                )
+                dca = trades[
+                    (trades["meta"].apply(lambda x: x.get("dca") is True))
+                    & (trades["action"].astype(str).str.upper() == "OPEN")
+                ].copy()
+            else:
+                dca = trades.iloc[0:0].copy()
+
+            if not dca.empty:
+                dca["date"] = pd.to_datetime(dca["created_at_utc"], format="mixed", utc=True).dt.date
+                end_dt = pd.to_datetime(EXPERIMENT_END).date()
+                dca = dca[dca["date"] <= end_dt].copy()
+                dca["market_id"] = dca["market_id"].astype(str)
+
+            prosp_dt = pd.to_datetime(PROSP_START).date()
+
+            def _slice(period_key: str):
+                if dca.empty:
+                    return dca
+                if period_key == "retrospective":
+                    return dca[dca["date"] < prosp_dt]
+                if period_key == "prospective":
+                    return dca[dca["date"] >= prosp_dt]
+                return dca
+
+            def _coef_stats(period_obj: dict):
+                mean_r = period_obj.get("mean_return")
+                std_r = period_obj.get("std_return")
+                n_r = period_obj.get("n_returns")
+                t_stat = None
+                if mean_r is not None and std_r is not None and n_r and std_r > 0:
+                    t_stat = float(mean_r) / (float(std_r) / np.sqrt(float(n_r)))
+                beta = None
+                days = period_obj.get("days")
+                final_pnl = period_obj.get("final_pnl")
+                if days and final_pnl is not None and days > 0:
+                    beta = float(final_pnl) / float(days)
+                return {
+                    "mean_return_pct": round(float(mean_r) * 100, 4) if mean_r is not None else None,
+                    "std_return_pct": round(float(std_r) * 100, 4) if std_r is not None else None,
+                    "t_stat": round(float(t_stat), 4) if t_stat is not None else None,
+                    "beta_usd_per_day": round(float(beta), 4) if beta is not None else None,
+                }
+
+            period_labels = {
+                "retrospective": "Retrospective",
+                "prospective": "Prospective",
+                "full": "Full Series",
+            }
+            table_rows = []
+            for key in ["retrospective", "prospective", "full"]:
+                period_pro = result["periods"].get(key, {})
+                period_anti = result["anti_periods"].get(key, {})
+                d_slice = _slice(key)
+                events_count = int(d_slice["market_id"].nunique()) if not d_slice.empty else 0
+                bets_count = int(len(d_slice)) if not d_slice.empty else 0
+
+                for strategy_name, p_obj in [("Pro-Trump", period_pro), ("Anti-Trump", period_anti)]:
+                    row = {
+                        "period_key": key,
+                        "period_label": period_labels[key],
+                        "strategy": strategy_name,
+                        "days": int(p_obj.get("days", 0) or 0),
+                        "events": events_count,
+                        "bets": bets_count,
+                    }
+                    row.update(_coef_stats(p_obj))
+                    table_rows.append(row)
+
+            result["strategy_period_comparison"] = table_rows
+    except Exception:
+        # Non-fatal: leave table out if source sheets are unavailable
+        pass
+
+    # ── S&P 500 correlation stats ──────────────────────────────────────────────
+    sp500_stats_path = OUTPUT_DIR / "sp500_correlation_stats.csv"
+    if sp500_stats_path.exists():
+        try:
+            sp_df = pd.read_csv(sp500_stats_path)
+            if not sp_df.empty:
+                s = sp_df.iloc[0]
+                result["sp500_correlation"] = {
+                    "n": int(s["n"]),
+                    "pearson_r": round(float(s["pearson_r"]), 4),
+                    "pearson_p": round(float(s["pearson_p"]), 4),
+                    "spearman_rho": round(float(s["spearman_rho"]), 4),
+                    "spearman_p": round(float(s["spearman_p"]), 4),
+                    "ols_alpha": round(float(s["ols_alpha"]), 6),
+                    "ols_beta": round(float(s["ols_beta"]), 4),
+                    "ols_alpha_p": round(float(s["ols_alpha_p"]), 4),
+                    "ols_beta_p": round(float(s["ols_beta_p"]), 4),
+                    "ols_r_squared": round(float(s["ols_r_squared"]), 4),
+                }
+        except Exception:
+            pass
+
+    # ── Market size analysis stats ─────────────────────────────────────────────
+    market_size_path = OUTPUT_DIR / "market_size_analysis.csv"
+    if market_size_path.exists():
+        try:
+            ms_df = pd.read_csv(market_size_path)
+            if not ms_df.empty and "size_cohort" in ms_df.columns:
+                cohorts = {}
+                for cohort in ["Large", "Small"]:
+                    sub = ms_df[ms_df["size_cohort"] == cohort]
+                    total_cost = float(sub["total_cost"].sum()) if "total_cost" in sub.columns and len(sub) > 0 else 0
+                    total_pnl_pro = float(sub["unrealised_pnl"].sum()) if len(sub) > 0 else 0
+                    total_pnl_anti = float(sub["anti_pnl"].sum()) if "anti_pnl" in sub.columns and len(sub) > 0 else 0
+                    cohorts[cohort] = {
+                        "count": int(len(sub)),
+                        "total_pnl_pro": round(total_pnl_pro, 4),
+                        "mean_pnl_pro": round(float(sub["unrealised_pnl"].mean()), 4) if len(sub) > 0 else 0,
+                        "total_pnl_anti": round(total_pnl_anti, 4),
+                        "mean_pnl_anti": round(float(sub["anti_pnl"].mean()), 4) if "anti_pnl" in sub.columns and len(sub) > 0 else 0,
+                        "total_invested": round(total_cost, 4),
+                        "roi_pro": round(total_pnl_pro / total_cost * 100, 4) if total_cost > 0 else 0,
+                        "roi_anti": round(total_pnl_anti / total_cost * 100, 4) if total_cost > 0 else 0,
+                    }
+                median_vol = ms_df.groupby("size_cohort")["mean_volume"].first()
+                # Median threshold is the min of large cohort mean_volume values
+                large_min = ms_df[ms_df["size_cohort"] == "Large"]["mean_volume"].min() if "Large" in ms_df["size_cohort"].values else 0
+                result["market_size"] = {
+                    "median_volume": round(float(large_min), 2),
+                    "cohorts": cohorts,
+                }
+        except Exception:
+            pass
 
     return result
 
